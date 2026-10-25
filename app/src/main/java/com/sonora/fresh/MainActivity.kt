@@ -3,6 +3,13 @@ package com.sonora.fresh
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.content.res.Configuration
+import android.graphics.ImageDecoder
+import android.graphics.drawable.Animatable
+import android.os.Build
+import android.widget.ImageView
+import android.graphics.Color
+import android.graphics.Typeface
 import android.provider.DocumentsContract
 import android.view.Gravity
 import android.view.ViewGroup
@@ -25,6 +32,53 @@ class MainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
     private val titles = mutableListOf<String>()
+    private lateinit var gifView: ImageView
+    private lateinit var gifContainer: LinearLayout
+    private lateinit var playerPane: LinearLayout
+    private lateinit var libraryPane: LinearLayout
+    private lateinit var mainArea: LinearLayout
+    private lateinit var seekBar: SeekBar
+    private var gifUri: Uri? = null
+    private val gifPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
+            gifUri = uri
+            getPreferences(MODE_PRIVATE).edit().putString("gif_uri", uri.toString()).apply()
+            showGif()
+        }
+    }
+    private fun showGif() {
+        val uri = gifUri ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= 28) {
+                val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(contentResolver, uri))
+                gifView.setImageDrawable(drawable)
+                (drawable as? Animatable)?.start()
+            } else {
+                gifView.setImageURI(uri)
+            }
+        } catch (e: Exception) {
+            now.text = "Не удалось открыть GIF: ${e.message}"
+        }
+    }
+    private fun applyOrientation() {
+        val wide = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        mainArea.orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        mainArea.removeAllViews()
+        (gifContainer.parent as? ViewGroup)?.removeView(gifContainer)
+        (playerPane.parent as? ViewGroup)?.removeView(playerPane)
+        if (wide) {
+            mainArea.addView(gifContainer, LinearLayout.LayoutParams(0, -1, 1f))
+            mainArea.addView(playerPane, LinearLayout.LayoutParams(0, -1, 1f))
+        } else {
+            mainArea.addView(gifContainer, LinearLayout.LayoutParams(-1, 0, 1f))
+            mainArea.addView(playerPane, LinearLayout.LayoutParams(-1, -2))
+        }
+    }
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyOrientation()
+    }
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -34,29 +88,86 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val bg = android.graphics.Color.rgb(5, 9, 15)
-        val accent = android.graphics.Color.rgb(35, 201, 255)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(22, 35, 22, 22); setBackgroundColor(bg) }
-        fun label(text: String, size: Float) = TextView(this).apply { this.text=text; textSize=size; setTextColor(-1); setPadding(0,10,0,10) }
-        root.addView(label("SONORA", 28f))
-        root.addView(label("Музыкальная библиотека • версия 1.0", 14f))
-        root.addView(Button(this).apply { text="Выбрать папку с музыкой"; setOnClickListener { folderPicker.launch(null) } })
-        now = label("Выбери папку с музыкой", 17f); now.setTextColor(accent); root.addView(now)
-        val row = LinearLayout(this).apply { gravity=Gravity.CENTER }
-        fun control(text: String, action: () -> Unit) = Button(this).apply { this.text=text; setOnClickListener { action() }; row.addView(this, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)) }
-        control("◀◀") { controller?.seekToPreviousMediaItem() }
-        play=Button(this).apply { text="▶"; setOnClickListener { controller?.let { if(it.isPlaying) it.pause() else it.play() } }; row.addView(this,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f)) }
-        control("▶▶") { controller?.seekToNextMediaItem() }
-        root.addView(row)
-        val seek=SeekBar(this); root.addView(seek)
-        seek.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar?, progress:Int, fromUser:Boolean) { if(fromUser) controller?.let { if(it.duration>0) it.seekTo(it.duration*progress/1000) } }
-            override fun onStartTrackingTouch(bar:SeekBar?) {}
-            override fun onStopTrackingTouch(bar:SeekBar?) {}
+        window.statusBarColor = Color.rgb(5,9,15)
+        window.navigationBarColor = Color.rgb(5,9,15)
+        val bg = Color.rgb(5, 9, 15)
+        val accent = Color.rgb(35, 201, 255)
+        fun label(value: String, size: Float) = TextView(this).apply {
+            text = value; textSize = size; setTextColor(Color.WHITE); setPadding(8, 8, 8, 8)
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14, 8, 14, 8)
+            setBackgroundColor(bg)
+        }
+        root.addView(label("SONORA", 25f).apply { setTextColor(accent); setTypeface(null, Typeface.BOLD) })
+        mainArea = LinearLayout(this)
+        root.addView(mainArea, LinearLayout.LayoutParams(-1, 0, 1f))
+        gifContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(6, 6, 6, 6)
+        }
+        gifView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.rgb(10, 20, 32))
+            contentDescription = "Анимированная обложка"
+        }
+        gifContainer.addView(gifView, LinearLayout.LayoutParams(-1, 0, 1f))
+        gifContainer.addView(Button(this).apply {
+            text = "ВЫБРАТЬ GIF ВМЕСТО ОБЛОЖКИ"
+            setOnClickListener { gifPicker.launch(arrayOf("image/gif")) }
         })
-        tracks=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        root.addView(ScrollView(this).apply { addView(tracks) },LinearLayout.LayoutParams(-1,0,1f))
+        playerPane = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(12, 4, 12, 4)
+        }
+        now = label("Выбери трек", 18f).apply { setTextColor(accent); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END }
+        playerPane.addView(now)
+        val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        fun control(value: String, action: () -> Unit) = Button(this).apply {
+            text = value; setOnClickListener { action() }
+            row.addView(this, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        control("◀◀") { controller?.seekToPreviousMediaItem() }
+        play = Button(this).apply {
+            text = "▶"; setOnClickListener { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
+        }
+        row.addView(play, LinearLayout.LayoutParams(0, -2, 1f))
+        control("▶▶") { controller?.seekToNextMediaItem() }
+        playerPane.addView(row)
+        seekBar = SeekBar(this)
+        playerPane.addView(seekBar)
+        seekBar.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) controller?.let { if (it.duration > 0) it.seekTo(it.duration * progress / 1000) }
+            }
+            override fun onStartTrackingTouch(bar: SeekBar?) {}
+            override fun onStopTrackingTouch(bar: SeekBar?) {}
+        })
+        applyOrientation()
+        libraryPane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        libraryPane.addView(Button(this).apply {
+            text = "ВЫБРАТЬ ПАПКУ С МУЗЫКОЙ"
+            setOnClickListener { folderPicker.launch(null) }
+        })
+        tracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        libraryPane.addView(ScrollView(this).apply { addView(tracks) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(libraryPane, LinearLayout.LayoutParams(-1, 0, 1f))
+        val libraryToggle = Button(this).apply {
+            text = "БИБЛИОТЕКА  ▾"
+            setOnClickListener {
+                val opening = libraryPane.visibility != android.view.View.VISIBLE
+                libraryPane.visibility = if (opening) android.view.View.VISIBLE else android.view.View.GONE
+                mainArea.layoutParams = LinearLayout.LayoutParams(-1, 0, if (opening) 1f else 5f)
+                libraryPane.layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+                text = if (opening) "БИБЛИОТЕКА  ▾" else "БИБЛИОТЕКА  ▴"
+            }
+        }
+        root.addView(libraryToggle)
         setContentView(root)
+        getPreferences(MODE_PRIVATE).getString("gif_uri", null)?.let {
+            gifUri = Uri.parse(it); showGif()
+        }
         val token=SessionToken(this, android.content.ComponentName(this,PlaybackService::class.java))
         controllerFuture=MediaController.Builder(this,token).buildAsync()
         controllerFuture?.addListener({
@@ -71,7 +182,7 @@ class MainActivity : ComponentActivity() {
         }, ContextCompat.getMainExecutor(this))
         getPreferences(MODE_PRIVATE).getString("folder",null)?.let { scanFolder(Uri.parse(it)) }
         val handler=android.os.Handler(mainLooper)
-        val updater=object:Runnable { override fun run() { controller?.let { if(it.duration>0) seek.progress=(it.currentPosition*1000/it.duration).toInt().coerceIn(0,1000) }; handler.postDelayed(this,500) } }
+        val updater=object:Runnable { override fun run() { controller?.let { if(it.duration>0) seekBar.progress=(it.currentPosition*1000/it.duration).toInt().coerceIn(0,1000) }; handler.postDelayed(this,500) } }
         handler.post(updater)
         window.decorView.addOnAttachStateChangeListener(object:android.view.View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v:android.view.View) {}
