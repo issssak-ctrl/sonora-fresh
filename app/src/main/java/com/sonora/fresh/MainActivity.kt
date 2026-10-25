@@ -75,7 +75,7 @@ class MainActivity : ComponentActivity() {
         handler.post(updater)
         window.decorView.addOnAttachStateChangeListener(object:android.view.View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v:android.view.View) {}
-            override fun onViewDetachedFromWindow(v:android.view) { handler.removeCallbacks(updater) }
+            override fun onViewDetachedFromWindow(v:android.view.View) { handler.removeCallbacks(updater) }
         })
     }
     private fun scanFolder(tree:Uri) {
