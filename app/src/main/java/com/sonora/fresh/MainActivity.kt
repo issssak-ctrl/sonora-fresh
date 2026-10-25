@@ -13,6 +13,9 @@ import android.graphics.Typeface
 import android.provider.DocumentsContract
 import android.view.Gravity
 import android.view.ViewGroup
+import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -152,18 +155,27 @@ class MainActivity : ComponentActivity() {
         })
         tracks = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         libraryPane.addView(ScrollView(this).apply { addView(tracks) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        libraryPane.visibility = View.GONE
         root.addView(libraryPane, LinearLayout.LayoutParams(-1, 0, 1f))
-        val libraryToggle = Button(this).apply {
-            text = "БИБЛИОТЕКА  ▾"
-            setOnClickListener {
-                val opening = libraryPane.visibility != android.view.View.VISIBLE
-                libraryPane.visibility = if (opening) android.view.View.VISIBLE else android.view.View.GONE
-                mainArea.layoutParams = LinearLayout.LayoutParams(-1, 0, if (opening) 1f else 5f)
-                libraryPane.layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
-                text = if (opening) "БИБЛИОТЕКА  ▾" else "БИБЛИОТЕКА  ▴"
-            }
+        val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        val playerTab = Button(this).apply { text = "ПЛЕЕР"; setTextColor(accent) }
+        val libraryTab = Button(this).apply { text = "БИБЛИОТЕКА" }
+        fun showTab(library: Boolean) {
+            mainArea.visibility = if (library) View.GONE else View.VISIBLE
+            libraryPane.visibility = if (library) View.VISIBLE else View.GONE
+            playerTab.setTextColor(if (library) Color.WHITE else accent)
+            libraryTab.setTextColor(if (library) accent else Color.WHITE)
         }
-        root.addView(libraryToggle)
+        playerTab.setOnClickListener { showTab(false) }
+        libraryTab.setOnClickListener { showTab(true) }
+        nav.addView(playerTab, LinearLayout.LayoutParams(0, -2, 1f))
+        nav.addView(libraryTab, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(nav)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(14, bars.top + 8, 14, bars.bottom + 8)
+            insets
+        }
         setContentView(root)
         getPreferences(MODE_PRIVATE).getString("gif_uri", null)?.let {
             gifUri = Uri.parse(it); showGif()
@@ -223,7 +235,7 @@ class MainActivity : ComponentActivity() {
                 }
             })
         }
-        if(items.isNotEmpty()) now.text="Найдено треков: ${items.size}"
+        if(items.isNotEmpty() && controller?.currentMediaItem == null) now.text="Найдено треков: ${items.size}"
         else now.text="Музыка не найдена в выбранной папке"
     }
     override fun onDestroy() { controllerFuture?.let { MediaController.releaseFuture(it) }; super.onDestroy() }
