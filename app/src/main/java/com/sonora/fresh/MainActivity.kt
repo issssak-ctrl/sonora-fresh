@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = background; window.navigationBarColor = background
-        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(background) }
+        root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background) }
         val header = text("SONORA", 22f, accent).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(4), 0, 0, 0) }
         root.addView(header, LinearLayout.LayoutParams(-1, dp(42)))
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -169,7 +169,7 @@ class MainActivity : ComponentActivity() {
         }
         library.addView(search, LinearLayout.LayoutParams(-1, dp(50)))
         trackList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        library.addView(ScrollView(this).apply { fillViewport = true; addView(trackList) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        library.addView(ScrollView(this).apply { isFillViewport = true; addView(trackList) }, LinearLayout.LayoutParams(-1, 0, 1f))
         val nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         playerTab = button("Плеер", 15f) { showLibrary(false) }
         libraryTab = button("Библиотека", 15f) { showLibrary(true) }
