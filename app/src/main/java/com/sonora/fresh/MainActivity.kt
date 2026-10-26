@@ -21,6 +21,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import android.media.MediaPlayer
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -46,6 +47,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var library: LinearLayout
     private lateinit var player: LinearLayout
     private lateinit var gif: ImageView
+    private lateinit var video: VideoView
+    private lateinit var mediaBox: FrameLayout
+    private lateinit var settings: ScrollView
+    private lateinit var settingsTab: TextView
+    private var animationMode = 1
+    private var carMode = false
     private lateinit var gifArea: LinearLayout
     private lateinit var gifChoose: TextView
     private lateinit var details: LinearLayout
@@ -78,8 +85,9 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
             gifUri = uri
-            getPreferences(MODE_PRIVATE).edit().putString("gif_uri", uri.toString()).apply()
-            displayGif()
+            animationMode = 0
+            getPreferences(MODE_PRIVATE).edit().putString("gif_uri", uri.toString()).putInt("animation_mode", 0).apply()
+            displayAnimation()
         }
     }
     private val audioPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -132,8 +140,12 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(Color.TRANSPARENT)
             contentDescription = "GIF вместо обложки"
         }
-        gifArea.addView(gif, LinearLayout.LayoutParams(-1, -2))
-        gifChoose = button("Выбрать GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
+        mediaBox = FrameLayout(this)
+        mediaBox.addView(gif, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+        video = VideoView(this).apply { visibility = View.GONE }
+        mediaBox.addView(video, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        gifArea.addView(mediaBox, LinearLayout.LayoutParams(-1, -2))
+        gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
         details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
         trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD }
@@ -194,11 +206,30 @@ class MainActivity : ComponentActivity() {
         library.addView(search, LinearLayout.LayoutParams(-1, dp(50)))
         trackList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         library.addView(ScrollView(this).apply { isFillViewport = true; addView(trackList) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        settings = ScrollView(this).apply { visibility = View.GONE }
+        val settingsItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(8), dp(4), dp(12)) }
+        settings.addView(settingsItems)
+        settingsItems.addView(text("Анимация обложки", 20f, accent), LinearLayout.LayoutParams(-1, dp(50)))
+        for (i in 1..4) {
+            settingsItems.addView(button("Встроенное видео MP4 №$i", 16f) { selectAnimation(i) }, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(7) })
+        }
+        settingsItems.addView(button("Мой GIF", 16f) { gifPicker.launch(arrayOf("image/gif")) }, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(7) })
+        settingsItems.addView(button("Без анимации", 16f) { selectAnimation(-1) }, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(7) })
+        settingsItems.addView(text("Автомобильный режим", 20f, accent), LinearLayout.LayoutParams(-1, dp(54)))
+        settingsItems.addView(button("Переключить автомобильный режим", 16f) {
+            carMode = !carMode
+            getPreferences(MODE_PRIVATE).edit().putBoolean("car_mode", carMode).apply()
+            toast(if (carMode) "Автомобильный режим включён" else "Автомобильный режим выключен")
+            configurePlayerLayout()
+        }, LinearLayout.LayoutParams(-1, dp(60)))
+        content.addView(settings, LinearLayout.LayoutParams(-1, -1))
         val nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         playerTab = button("Плеер", 15f) { showLibrary(false) }
         libraryTab = button("Библиотека", 15f) { showLibrary(true) }
+        settingsTab = button("Настройки", 15f) { showSettings() }
         nav.addView(playerTab, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(5) })
         nav.addView(libraryTab, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(5) })
+        nav.addView(settingsTab, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(5) })
         root.addView(nav)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -207,7 +238,11 @@ class MainActivity : ComponentActivity() {
         }
         setContentView(root)
         showLibrary(false)
-        getPreferences(MODE_PRIVATE).getString("gif_uri", null)?.let { gifUri = Uri.parse(it); displayGif() }
+        val prefs = getPreferences(MODE_PRIVATE)
+        carMode = prefs.getBoolean("car_mode", false)
+        animationMode = prefs.getInt("animation_mode", 1)
+        prefs.getString("gif_uri", null)?.let { gifUri = Uri.parse(it) }
+        displayAnimation()
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync()
         controllerFuture?.addListener({
@@ -226,10 +261,56 @@ class MainActivity : ComponentActivity() {
         handler.post(ticker)
     }
     private fun showLibrary(show: Boolean) {
+        settings.visibility = View.GONE
         library.visibility = if (show) View.VISIBLE else View.GONE
         player.visibility = if (show) View.GONE else View.VISIBLE
+        if (show) video.pause() else if (animationMode > 0) video.start()
         playerTab.setTextColor(if (show) Color.WHITE else accent)
         libraryTab.setTextColor(if (show) accent else Color.WHITE)
+        settingsTab.setTextColor(Color.WHITE)
+    }
+    private fun showSettings() {
+        player.visibility = View.GONE
+        library.visibility = View.GONE
+        settings.visibility = View.VISIBLE
+        video.pause()
+        playerTab.setTextColor(Color.WHITE)
+        libraryTab.setTextColor(Color.WHITE)
+        settingsTab.setTextColor(accent)
+    }
+    private fun selectAnimation(mode: Int) {
+        animationMode = mode
+        getPreferences(MODE_PRIVATE).edit().putInt("animation_mode", mode).apply()
+        displayAnimation()
+        showLibrary(false)
+    }
+    private fun displayAnimation() {
+        video.stopPlayback()
+        video.visibility = View.GONE
+        gif.visibility = View.GONE
+        if (animationMode in 1..4) {
+            val resId = resources.getIdentifier("animation_$animationMode", "raw", packageName)
+            if (resId == 0) { toast("Встроенное видео не найдено"); return }
+            video.visibility = View.VISIBLE
+            video.setOnPreparedListener { mp ->
+                mp.isLooping = true
+                mp.setVolume(0f, 0f)
+                val w = mp.videoWidth.coerceAtLeast(1)
+                val h = mp.videoHeight.coerceAtLeast(1)
+                val width = mediaBox.width.takeIf { it > 0 } ?: (resources.displayMetrics.widthPixels / if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 2 else 1)
+                val height = (width.toFloat() * h / w).toInt()
+                mediaBox.layoutParams = (mediaBox.layoutParams as LinearLayout.LayoutParams).apply { this.height = height }
+                video.layoutParams = FrameLayout.LayoutParams(-1, height, Gravity.CENTER)
+                if (player.visibility == View.VISIBLE) video.start()
+            }
+            video.setVideoURI(Uri.parse("android.resource://$packageName/$resId"))
+        } else if (animationMode == 0) {
+            gif.visibility = View.VISIBLE
+            displayGif()
+        } else {
+            mediaBox.layoutParams = (mediaBox.layoutParams as LinearLayout.LayoutParams).apply { height = dp(4) }
+        }
+        gifChoose.visibility = if (animationMode == 0) View.VISIBLE else View.GONE
     }
     private fun updateModes() {
         controller?.let {
@@ -261,9 +342,12 @@ class MainActivity : ComponentActivity() {
         gif.adjustViewBounds = true
         gif.maxHeight = if (landscape) (resources.displayMetrics.heightPixels * 0.70f).toInt() else (resources.displayMetrics.heightPixels * 0.52f).toInt()
         // wrap_content and adjustViewBounds preserve aspect ratio; maxHeight prevents oversized GIF.
-        gif.layoutParams = LinearLayout.LayoutParams(-1, -2)
+        gif.layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
+        if (animationMode > 0) mediaBox.post { displayAnimation() }
     }
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); configurePlayerLayout() }
+    override fun onPause() { super.onPause(); video.pause() }
+    override fun onResume() { super.onResume(); if (::video.isInitialized && animationMode > 0 && player.visibility == View.VISIBLE) video.start() }
     private fun displayGif() {
         val uri = gifUri ?: return
         try {
@@ -353,6 +437,7 @@ class MainActivity : ComponentActivity() {
     }
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
+        video.stopPlayback()
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onDestroy()
     }
