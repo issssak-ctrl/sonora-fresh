@@ -13,6 +13,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.provider.DocumentsContract
+import android.provider.MediaStore
+import android.content.pm.PackageManager
+import android.widget.Toast
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -78,6 +81,17 @@ class MainActivity : ComponentActivity() {
             getPreferences(MODE_PRIVATE).edit().putString("gif_uri", uri.toString()).apply()
             displayGif()
         }
+    }
+    private val audioPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scanDeviceMusic() else toast("Разрешите доступ к музыке в настройках Android")
+    }
+    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    private fun requestMusicScan() {
+        val permission = if (Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_AUDIO
+                         else android.Manifest.permission.READ_EXTERNAL_STORAGE
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            scanDeviceMusic()
+        } else audioPermission.launch(permission)
     }
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -156,7 +170,17 @@ class MainActivity : ComponentActivity() {
         configurePlayerLayout()
         library = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         content.addView(library, LinearLayout.LayoutParams(-1, -1))
-        val pickFolder = button("Выбрать папку с музыкой", 15f) { folderPicker.launch(null) }
+        library.addView(button("Сканировать музыку / USB", 15f) { requestMusicScan() }, LinearLayout.LayoutParams(-1, dp(52)))
+        val pickFolder = button("Выбрать папку (если поддерживается)", 14f) {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addCategory(Intent.CATEGORY_DEFAULT)
+            if (intent.resolveActivity(packageManager) == null) {
+                toast("В системе нет выбора папок. Используйте «Сканировать музыку / USB»")
+            } else try {
+                folderPicker.launch(null)
+            } catch (e: Exception) {
+                toast("Проводник недоступен: ${e.localizedMessage ?: "ошибка системы"}")
+            }
+        }
         library.addView(pickFolder, LinearLayout.LayoutParams(-1, dp(48)))
         search = EditText(this).apply {
             hint = "Поиск по трекам"; setHintTextColor(muted); setTextColor(Color.WHITE); textSize = 15f
@@ -255,6 +279,51 @@ class MainActivity : ComponentActivity() {
             trackList.getChildAt(i).visibility = if (songTitles.getOrNull(i)?.contains(query, ignoreCase = true) == true) View.VISIBLE else View.GONE
         }
     }
+    private fun scanDeviceMusic() {
+        val items = mutableListOf<MediaItem>()
+        val names = mutableListOf<String>()
+        try {
+            val columns = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.IS_MUSIC)
+            val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            contentResolver.query(collection, columns, null, null, MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")?.use { cursor ->
+                val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                while (cursor.moveToNext() && items.size < 10000) {
+                    val name = cursor.getString(nameIndex) ?: continue
+                    val title = cursor.getString(titleIndex)?.takeIf { it.isNotBlank() } ?: name.substringBeforeLast('.')
+                    val uri = android.content.ContentUris.withAppendedId(collection, cursor.getLong(idIndex))
+                    items.add(MediaItem.Builder().setUri(uri)
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build()).build())
+                    names.add(title)
+                }
+            }
+            showSongs(items, names)
+            toast(if (items.isEmpty()) "Музыка не найдена. Возможно, BYD скрывает USB от сторонних приложений."
+                  else "Найдено треков: ${items.size}")
+        } catch (e: SecurityException) {
+            toast("Нет доступа к аудиофайлам: ${e.localizedMessage}")
+        } catch (e: Exception) {
+            toast("Ошибка сканирования: ${e.localizedMessage}")
+        }
+    }
+    private fun showSongs(items: List<MediaItem>, names: List<String>) {
+        songTitles.clear(); songTitles.addAll(names)
+        trackList.removeAllViews()
+        names.forEachIndexed { index, title ->
+            trackList.addView(text("♫   $title", 15f).apply {
+                maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                setPadding(dp(8), 0, dp(8), 0)
+                setOnClickListener {
+                    controller?.apply { setMediaItems(items, index, 0); prepare(); play() }
+                    trackName.text = title.substringBeforeLast('.')
+                    showLibrary(false)
+                }
+            }, LinearLayout.LayoutParams(-1, dp(52)))
+        }
+        filterSongs(search.text.toString())
+    }
     private fun scanFolder(tree: Uri) {
         val items = mutableListOf<MediaItem>()
         songTitles.clear(); trackList.removeAllViews()
@@ -279,19 +348,8 @@ class MainActivity : ComponentActivity() {
                 folders.forEach { visit(it, depth + 1) }
             }
         }
-        try { visit(rootId, 0) } catch (e: Exception) { trackArtist.text = "Ошибка папки: ${e.message}" }
-        songTitles.forEachIndexed { index, title ->
-            trackList.addView(text("♫   $title", 15f).apply {
-                maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-                setPadding(dp(8), 0, dp(8), 0)
-                setOnClickListener {
-                    controller?.apply { setMediaItems(items, index, 0); prepare(); play() }
-                    trackName.text = title.substringBeforeLast('.')
-                    showLibrary(false)
-                }
-            }, LinearLayout.LayoutParams(-1, dp(52)))
-        }
-        filterSongs(search.text.toString())
+        try { visit(rootId, 0) } catch (e: Exception) { toast("Ошибка чтения папки: ${e.localizedMessage}") }
+        showSongs(items, songTitles.toList())
     }
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
