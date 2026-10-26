@@ -112,12 +112,15 @@ class MainActivity : ComponentActivity() {
     private fun text(value: String, size: Float, color: Int = Color.WHITE) = TextView(this).apply {
         this.text = value; textSize = size; setTextColor(color); gravity = Gravity.CENTER_VERTICAL
     }
-    private fun pill(): GradientDrawable = GradientDrawable().apply {
-        setColor(Color.argb(135, 19, 40, 56)); cornerRadius = dp(80).toFloat()
-        setStroke(dp(1), Color.rgb(36, 82, 106))
+    private fun pill(): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TOP_BOTTOM,
+        intArrayOf(Color.rgb(83, 96, 108), Color.rgb(35, 47, 59), Color.rgb(13, 24, 35))
+    ).apply {
+        cornerRadius = dp(18).toFloat()
+        setStroke(dp(1), Color.rgb(71, 170, 198))
     }
     private fun button(value: String, size: Float = 18f, action: () -> Unit): TextView = text(value, size).apply {
-        gravity = Gravity.CENTER; background = pill(); setOnClickListener { action() }
+        gravity = Gravity.CENTER; background = pill(); setOnClickListener { action() }; elevation = dp(2).toFloat()
     }
     private fun formatTime(ms: Long): String {
         val seconds = ms.coerceAtLeast(0) / 1000
@@ -133,14 +136,14 @@ class MainActivity : ComponentActivity() {
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         player = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(player, LinearLayout.LayoutParams(-1, -1))
-        gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER }
+        gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP }
         gif = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
             setBackgroundColor(Color.TRANSPARENT)
             contentDescription = "GIF вместо обложки"
         }
-        mediaBox = FrameLayout(this)
+        mediaBox = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         mediaBox.addView(gif, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         video = VideoView(this).apply { visibility = View.GONE }
         mediaBox.addView(video, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
@@ -297,10 +300,16 @@ class MainActivity : ComponentActivity() {
                 mp.setVolume(0f, 0f)
                 val w = mp.videoWidth.coerceAtLeast(1)
                 val h = mp.videoHeight.coerceAtLeast(1)
-                val width = mediaBox.width.takeIf { it > 0 } ?: (resources.displayMetrics.widthPixels / if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 2 else 1)
-                val height = (width.toFloat() * h / w).toInt()
+                val width = gifArea.width.takeIf { it > 0 }
+                    ?: (resources.displayMetrics.widthPixels / if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 2 else 1)
+                val desiredHeight = (width.toFloat() * h / w).toInt()
+                val maxHeight = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                    (resources.displayMetrics.heightPixels * 0.66f).toInt()
+                else (resources.displayMetrics.heightPixels * 0.45f).toInt()
+                val height = desiredHeight.coerceAtMost(maxHeight).coerceAtLeast(dp(80))
+                val videoWidth = (height.toFloat() * w / h).toInt().coerceAtMost(width)
                 mediaBox.layoutParams = (mediaBox.layoutParams as LinearLayout.LayoutParams).apply { this.height = height }
-                video.layoutParams = FrameLayout.LayoutParams(-1, height, Gravity.CENTER)
+                video.layoutParams = FrameLayout.LayoutParams(videoWidth, height, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
                 if (player.visibility == View.VISIBLE) video.start()
             }
             video.setVideoURI(Uri.parse("android.resource://$packageName/$resId"))
@@ -331,19 +340,20 @@ class MainActivity : ComponentActivity() {
         (gifArea.parent as? ViewGroup)?.removeView(gifArea)
         (details.parent as? ViewGroup)?.removeView(details)
         player.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        player.gravity = Gravity.TOP
         if (landscape) {
-            player.addView(gifArea, LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = dp(14) })
-            player.addView(details, LinearLayout.LayoutParams(0, -1, 1f))
+            player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(12) })
+            player.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
         } else {
-            player.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
-            player.addView(details, LinearLayout.LayoutParams(-1, -2))
+            player.addView(gifArea, LinearLayout.LayoutParams(-1, -2))
+            player.addView(details, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         }
         gif.scaleType = ImageView.ScaleType.FIT_CENTER
         gif.adjustViewBounds = true
         gif.maxHeight = if (landscape) (resources.displayMetrics.heightPixels * 0.70f).toInt() else (resources.displayMetrics.heightPixels * 0.52f).toInt()
         // wrap_content and adjustViewBounds preserve aspect ratio; maxHeight prevents oversized GIF.
         gif.layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
-        if (animationMode > 0) mediaBox.post { displayAnimation() }
+        if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
     override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); configurePlayerLayout() }
     override fun onPause() { super.onPause(); video.pause() }
