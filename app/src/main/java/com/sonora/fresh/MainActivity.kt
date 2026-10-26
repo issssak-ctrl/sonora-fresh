@@ -12,6 +12,7 @@ import android.graphics.ImageDecoder
 import android.graphics.Typeface
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.GradientDrawable
+import androidx.core.content.res.ResourcesCompat
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -129,6 +130,14 @@ class MainActivity : ComponentActivity() {
         GradientDrawable.Orientation.TL_BR,
         intArrayOf(Color.rgb(18, 34, 49), Color.rgb(2, 7, 15), Color.rgb(9, 21, 33))
     ).apply { setStroke(dp(1), Color.rgb(30, 75, 102)); cornerRadius = dp(8).toFloat() }
+    private fun metalDisc(): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.rgb(176, 194, 208), Color.rgb(42, 60, 76), Color.rgb(5, 12, 22), Color.rgb(37, 56, 70))
+    ).apply {
+        shape = GradientDrawable.OVAL
+        setStroke(dp(2), accent)
+    }
+    private fun metalTexture(id: Int) = ContextCompat.getDrawable(this, id)
     private fun pill(): GradientDrawable = metal()
     private fun button(value: String, size: Float = 18f, action: () -> Unit): TextView = text(value, size).apply {
         gravity = Gravity.CENTER; background = pill(); setOnClickListener { action() }
@@ -145,7 +154,7 @@ class MainActivity : ComponentActivity() {
             typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
             setShadowLayer(dp(4).toFloat(), 0f, dp(1).toFloat(), accent)
             setPadding(dp(14), 0, dp(8), 0)
-            background = metal()
+            background = metalTexture(R.drawable.sonora_metal_header)
         }
         root.addView(header, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(6) })
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -166,13 +175,13 @@ class MainActivity : ComponentActivity() {
         gifArea.addView(mediaBox, LinearLayout.LayoutParams(-1, -2))
         gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
-        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; background = panel(); setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; background = metalTexture(R.drawable.sonora_metal_panel); setPadding(dp(10), dp(8), dp(10), dp(8)) }
         trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD }
         trackArtist = text("SONORA · Now Playing", 13f, muted)
         details.addView(trackName, LinearLayout.LayoutParams(-1, -2))
         details.addView(trackArtist, LinearLayout.LayoutParams(-1, dp(28)))
         spectrum = SpectrumView()
-        details.addView(spectrum, LinearLayout.LayoutParams(-1, dp(68)).apply { bottomMargin = dp(4) })
+        details.addView(spectrum, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(4) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         shuffleButton = button("⇄", 20f) {
             controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; updateModes() }
@@ -184,10 +193,11 @@ class MainActivity : ComponentActivity() {
             controller?.let { it.repeatMode = when (it.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }; updateModes() }
         }
         listOf(shuffleButton, prev, playButton, next, repeatButton).forEachIndexed { index, view ->
-            view.background = metal(true)
-            controls.addView(view, LinearLayout.LayoutParams(0, dp(if (index == 2) 68 else 54), if (index == 2) 1.32f else 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            view.background = metalDisc()
+            val diameter = dp(if (index == 2) 66 else 49)
+            controls.addView(view, LinearLayout.LayoutParams(0, diameter, if (index == 2) 1.25f else 1f).apply { marginStart = dp(2); marginEnd = dp(2) })
         }
-        details.addView(controls, LinearLayout.LayoutParams(-1, dp(82)))
+        details.addView(controls, LinearLayout.LayoutParams(-1, dp(74)))
         seek = SeekBar(this).apply { max = 1000; progressTintList = android.content.res.ColorStateList.valueOf(accent); thumbTintList = android.content.res.ColorStateList.valueOf(accent) }
         details.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -245,14 +255,14 @@ class MainActivity : ComponentActivity() {
             configurePlayerLayout()
         }, LinearLayout.LayoutParams(-1, dp(60)))
         content.addView(settings, LinearLayout.LayoutParams(-1, -1))
-        nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = metal() }
+        nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = metalTexture(R.drawable.sonora_metal_footer) }
         playerTab = button("Плеер", 15f) { showLibrary(false) }
         libraryTab = button("Библиотека", 15f) { showLibrary(true) }
         settingsTab = button("Настройки", 15f) { showSettings() }
-        nav.addView(playerTab, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginEnd = dp(5) })
-        nav.addView(libraryTab, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(5) })
-        nav.addView(settingsTab, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(5) })
-        root.addView(nav, LinearLayout.LayoutParams(-1, dp(62)))
+        nav.addView(playerTab, LinearLayout.LayoutParams(0, dp(45), 1f).apply { marginEnd = dp(3) })
+        nav.addView(libraryTab, LinearLayout.LayoutParams(0, dp(45), 1f).apply { marginStart = dp(3) })
+        nav.addView(settingsTab, LinearLayout.LayoutParams(0, dp(45), 1f).apply { marginStart = dp(3) })
+        root.addView(nav, LinearLayout.LayoutParams(-1, dp(55)))
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setPadding(dp(12), bars.top + dp(3), dp(12), bars.bottom + dp(5))
@@ -355,7 +365,7 @@ class MainActivity : ComponentActivity() {
         (details.parent as? ViewGroup)?.removeView(details)
         player.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         if (landscape) {
-            player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 1.12f).apply { marginEnd = dp(8) })
+            player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 1.12f).apply { marginEnd = dp(5) })
             player.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
         } else {
             player.addView(gifArea, LinearLayout.LayoutParams(-1, -2))
