@@ -1,6 +1,6 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android { namespace = "com.sonora.fresh"; compileSdk = 35
-    defaultConfig { applicationId = "com.sonora.fresh"; minSdk = 26; targetSdk = 35; versionCode = 8; versionName = "1.7-metallic-player" }
+    defaultConfig { applicationId = "com.sonora.fresh"; minSdk = 26; targetSdk = 35; versionCode = 9; versionName = "1.8-metallic-layout" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }
