@@ -44,7 +44,7 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val background = Color.rgb(2, 6, 12)
-    private val accent = Color.rgb(19, 201, 248)
+    private val accent = Color.rgb(0, 209, 255)
     private val muted = Color.rgb(154, 173, 189)
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var total: TextView
     private lateinit var seek: SeekBar
     private lateinit var trackList: LinearLayout
+    private lateinit var spectrum: View
     private lateinit var search: EditText
     private lateinit var playerTab: TextView
     private lateinit var libraryTab: TextView
@@ -119,34 +120,39 @@ class MainActivity : ComponentActivity() {
     private fun text(value: String, size: Float, color: Int = Color.WHITE) = TextView(this).apply {
         this.text = value; textSize = size; setTextColor(color); gravity = Gravity.CENTER_VERTICAL
     }
-    // Resolution-independent chrome controls; hit targets remain real Android views.
-    private fun chrome(round: Boolean = false): Drawable = object : Drawable() {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        override fun draw(canvas: Canvas) {
-            val b = bounds
-            val w = b.width().toFloat(); val h = b.height().toFloat()
-            if (w <= 0f || h <= 0f) return
-            val radius = if (round) minOf(w, h) / 2f - dp(2) else dp(12).toFloat()
-            val r = RectF(dp(2).toFloat(), dp(2).toFloat(), w - dp(2), h - dp(2))
-            paint.shader = LinearGradient(0f, 0f, w * .18f, h,
-                intArrayOf(0xff85939f.toInt(), 0xff344657.toInt(), 0xff070d16.toInt(), 0xff263543.toInt()),
-                floatArrayOf(0f, .22f, .66f, 1f), Shader.TileMode.CLAMP)
-            paint.style = Paint.Style.FILL; canvas.drawRoundRect(r, radius, radius, paint); paint.shader = null
-            paint.color = 0xff0a141e.toInt(); paint.style = Paint.Style.STROKE; paint.strokeWidth = dp(3).toFloat()
-            canvas.drawRoundRect(r, radius, radius, paint)
-            paint.color = 0xff04caff.toInt(); paint.strokeWidth = dp(1.5f)
-            canvas.drawRoundRect(r, radius, radius, paint)
-            paint.color = 0x88ffffff.toInt(); paint.strokeWidth = dp(1).toFloat()
-            canvas.drawArc(RectF(r.left + dp(4), r.top + dp(4), r.right - dp(4), r.bottom - dp(4)), 205f, 95f, false, paint)
-            paint.style = Paint.Style.FILL
+    // Flat cyan outlined panels: predictable on all densities, no bitmap assets.
+    private fun panel(radius: Float = 12f, stroke: Int = accent): Drawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(radius)
+        setColor(0xff06111c.toInt())
+        setStroke(dp(1), stroke)
+    }
+    private fun circle(): Drawable = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(0xff030a12.toInt())
+        setStroke(dp(1.5f).toInt(), accent)
+    }
+    private fun chrome(round: Boolean = false): Drawable = if (round) circle() else panel()
+    private inner class SpectrumView : View(this@MainActivity) {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private var frame = 0f
+        override fun onDraw(c: Canvas) {
+            super.onDraw(c)
+            val bars = 48
+            val spacing = width.toFloat() / bars
+            val active = controller?.isPlaying == true
+            for (i in 0 until bars) {
+                val wave = kotlin.math.abs(kotlin.math.sin(i * 0.73 + frame) * kotlin.math.cos(i * 0.29 - frame * .6))
+                val h = height * (if (active) .12f + .84f * wave.toFloat() else .08f + .15f * wave.toFloat())
+                p.color = if (i % 4 == 0) 0xff78edff.toInt() else accent
+                c.drawRoundRect(i * spacing + dp(1), height - h, (i + 1) * spacing - dp(1), height.toFloat(), dp(1f), dp(1f), p)
+            }
+            if (active) { frame += .13f; postInvalidateDelayed(55) }
         }
-        override fun setAlpha(alpha: Int) {}
-        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
-        @Deprecated("Deprecated in Java") override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
     private fun dp(value: Float) = (value * resources.displayMetrics.density + .5f)
     private fun button(value: String, size: Float = 18f, action: () -> Unit): TextView = text(value, size).apply {
-        gravity = Gravity.CENTER; background = chrome(); setOnClickListener { action() }
+        gravity = Gravity.CENTER; background = panel(); setOnClickListener { action() }
         elevation = dp(2).toFloat()
     }
     private fun formatTime(ms: Long): String {
@@ -157,7 +163,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.statusBarColor = background; window.navigationBarColor = background
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background) }
-        val header = text("◉  SONORA", 23f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(16), 0, 0, 0); background = chrome() }
+        val header = text("●  SONORA", 23f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(16), 0, 0, 0); background = panel(0f, 0xff153d50.toInt()) }
         root.addView(header, LinearLayout.LayoutParams(-1, dp(52)))
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -177,11 +183,13 @@ class MainActivity : ComponentActivity() {
         gifArea.addView(mediaBox, LinearLayout.LayoutParams(-1, -2))
         gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
-        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; setPadding(dp(9), dp(9), dp(9), dp(8)); background = chrome() }
+        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), dp(10), dp(10), dp(10)); background = panel() }
         trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD }
         trackArtist = text("SONORA · Now Playing", 13f, muted)
         details.addView(trackName, LinearLayout.LayoutParams(-1, -2))
         details.addView(trackArtist, LinearLayout.LayoutParams(-1, dp(28)))
+        spectrum = SpectrumView()
+        details.addView(spectrum, LinearLayout.LayoutParams(-1, dp(55)).apply { topMargin = dp(7); bottomMargin = dp(8) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         shuffleButton = button("⇄", 20f) {
             controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; updateModes() }
@@ -193,10 +201,25 @@ class MainActivity : ComponentActivity() {
             controller?.let { it.repeatMode = when (it.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }; updateModes() }
         }
         listOf(shuffleButton, prev, playButton, next, repeatButton).forEachIndexed { index, view ->
-            view.background = chrome(true)
-            controls.addView(view, LinearLayout.LayoutParams(0, dp(if (index == 2) 70 else 55), if (index == 2) 1.35f else 1f).apply { marginStart = dp(1); marginEnd = dp(1) })
+            view.background = circle()
+            // Equal width and height are essential: circles must never turn into ovals.
+            val size = if (index == 2) dp(62) else dp(44)
+            controls.addView(view, LinearLayout.LayoutParams(size, size).apply { marginStart = dp(3); marginEnd = dp(3) })
         }
-        details.addView(controls, LinearLayout.LayoutParams(-1, dp(82)))
+        details.addView(controls, LinearLayout.LayoutParams(-1, dp(76)))
+        controls.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val row = v as LinearLayout
+            val available = row.width - row.paddingLeft - row.paddingRight
+            if (available <= 0) return@addOnLayoutChangeListener
+            val small = minOf(dp(44), (available - dp(62) - dp(30)) / 4).coerceAtLeast(dp(26))
+            val large = minOf(dp(62), (available - dp(30) - 4 * small)).coerceAtLeast(dp(34))
+            for (i in 0 until row.childCount) {
+                val size = if (i == 2) large else small
+                val child = row.getChildAt(i)
+                val lp = child.layoutParams as LinearLayout.LayoutParams
+                if (lp.width != size || lp.height != size) { lp.width = size; lp.height = size; child.layoutParams = lp }
+            }
+        }
         seek = SeekBar(this).apply { max = 1000; progressTintList = android.content.res.ColorStateList.valueOf(accent); thumbTintList = android.content.res.ColorStateList.valueOf(accent) }
         details.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -254,7 +277,7 @@ class MainActivity : ComponentActivity() {
             configurePlayerLayout()
         }, LinearLayout.LayoutParams(-1, dp(60)))
         content.addView(settings, LinearLayout.LayoutParams(-1, -1))
-        val nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = chrome(); setPadding(dp(4), dp(3), dp(4), dp(3)) }
+        val nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = panel(); setPadding(dp(4), dp(3), dp(4), dp(3)) }
         playerTab = button("Плеер", 15f) { showLibrary(false) }
         libraryTab = button("Библиотека", 15f) { showLibrary(true) }
         settingsTab = button("Настройки", 15f) { showSettings() }
@@ -281,7 +304,7 @@ class MainActivity : ComponentActivity() {
                 controller = controllerFuture?.get()
                 controller?.addListener(object : Player.Listener {
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { refreshTrack() }
-                    override fun onIsPlayingChanged(isPlaying: Boolean) { playButton.text = if (isPlaying) "Ⅱ" else "▶" }
+                    override fun onIsPlayingChanged(isPlaying: Boolean) { playButton.text = if (isPlaying) "Ⅱ" else "▶"; spectrum.invalidate() }
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { updateModes() }
                     override fun onRepeatModeChanged(repeatMode: Int) { updateModes() }
                 })
@@ -296,6 +319,7 @@ class MainActivity : ComponentActivity() {
         library.visibility = if (show) View.VISIBLE else View.GONE
         player.visibility = if (show) View.GONE else View.VISIBLE
         if (show) video.pause() else if (animationMode > 0) video.start()
+        spectrum.invalidate()
         playerTab.setTextColor(if (show) Color.WHITE else accent)
         libraryTab.setTextColor(if (show) accent else Color.WHITE)
         settingsTab.setTextColor(Color.WHITE)
@@ -368,7 +392,7 @@ class MainActivity : ComponentActivity() {
         (gifArea.parent as? ViewGroup)?.removeView(gifArea)
         (details.parent as? ViewGroup)?.removeView(details)
         player.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-        player.gravity = Gravity.TOP
+        player.gravity = if (landscape) Gravity.TOP else Gravity.CENTER_VERTICAL
         if (landscape) {
             player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 1.2f).apply { marginEnd = dp(6) })
             player.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
