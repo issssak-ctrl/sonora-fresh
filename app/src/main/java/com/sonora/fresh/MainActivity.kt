@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         player = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         playerScroll = ScrollView(this).apply { isFillViewport = false; overScrollMode = View.OVER_SCROLL_NEVER; clipToPadding = false }
-        playerScroll.addView(player, android.widget.ScrollView.LayoutParams(-1, -2))
+        playerScroll.addView(player, FrameLayout.LayoutParams(-1, -2))
         content.addView(playerScroll, LinearLayout.LayoutParams(-1, -1))
         gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP }
         gif = ImageView(this).apply {
