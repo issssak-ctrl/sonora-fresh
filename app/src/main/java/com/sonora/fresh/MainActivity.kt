@@ -90,6 +90,8 @@ class MainActivity : ComponentActivity() {
     private class RowHolder(val root: LinearLayout, val icon: TextView, val title: TextView, val sub: TextView)
     private val allSongs = mutableListOf<Song>()
     private val spacers = mutableListOf<View>()
+    private val animButtons = mutableMapOf<Int, TextView>()
+    private lateinit var carToggle: TextView
     private val favorites = mutableSetOf<String>()
     private val chipModes = listOf(0, 3, 1, 2)
     private val iconSearch = 0
@@ -188,6 +190,10 @@ class MainActivity : ComponentActivity() {
     private inner class SpectrumView : View(this@MainActivity) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val shown = FloatArray(AudioLevels.BANDS)
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            setMeasuredDimension(getDefaultSize(suggestedMinimumWidth, widthMeasureSpec),
+                if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.EXACTLY) View.MeasureSpec.getSize(heightMeasureSpec) else suggestedMinimumHeight)
+        }
         override fun onDraw(c: Canvas) {
             super.onDraw(c)
             val bars = AudioLevels.BANDS
@@ -234,6 +240,15 @@ class MainActivity : ComponentActivity() {
         player = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(player, LinearLayout.LayoutParams(-1, -1))
         gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; background = panel(8f); setPadding(dp(3), dp(3), dp(3), dp(3)) }
+        // Landscape: make the player panel exactly as tall as the video frame.
+        gifArea.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            if (isLandscape() && ::details.isInitialized) {
+                val h = bottom - top
+                val lp = details.layoutParams
+                val want = if (h > dp(150)) h else ViewGroup.LayoutParams.WRAP_CONTENT
+                if (lp != null && lp.height != want) { lp.height = want; details.layoutParams = lp }
+            }
+        }
         gif = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
@@ -248,8 +263,8 @@ class MainActivity : ComponentActivity() {
         gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
         details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = darkPanel() }
-        trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD; setShadowLayer(dp(7f), 0f, 0f, 0x8800d1ff.toInt()) }
-        trackArtist = text("", 14f, 0xffb8c4cf.toInt()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        trackName = text("Выбери трек в библиотеке", 15f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setShadowLayer(dp(5f), 0f, 0f, 0x6600d1ff.toInt()) }
+        trackArtist = text("", 21f, accent).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD; setShadowLayer(dp(7f), 0f, 0f, 0x8800d1ff.toInt()) }
         heart = IconView(iconHeart).apply { setOnClickListener { toggleFavorite() } }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val textCol = LinearLayout(this).apply {
@@ -394,22 +409,35 @@ class MainActivity : ComponentActivity() {
         miniBar.addView(miniPlay, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) })
         miniBar.addView(miniNext, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) })
         library.addView(miniBar, LinearLayout.LayoutParams(-1, dp(60)).apply { topMargin = dp(6) })
-        settings = ScrollView(this).apply { visibility = View.GONE }
-        val settingsItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(8), dp(4), dp(12)) }
+        settings = ScrollView(this).apply { visibility = View.GONE; overScrollMode = View.OVER_SCROLL_NEVER }
+        val settingsItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(6), dp(2), dp(12)) }
         settings.addView(settingsItems)
-        settingsItems.addView(text("Анимация обложки", 20f, accent), LinearLayout.LayoutParams(-1, dp(50)))
-        for (i in 1..4) {
-            settingsItems.addView(button("Встроенное видео MP4 №$i", 16f) { selectAnimation(i) }, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(7) })
+        fun sectionTitle(t: String) = text(t, 15f, accent).apply {
+            typeface = Typeface.DEFAULT_BOLD; letterSpacing = 0.08f; setPadding(dp(6), 0, 0, 0)
+            setShadowLayer(dp(6f), 0f, 0f, 0x8800d1ff.toInt())
         }
-        settingsItems.addView(button("Мой GIF", 16f) { gifPicker.launch(arrayOf("image/gif")) }, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(7) })
-        settingsItems.addView(button("Без анимации", 16f) { selectAnimation(-1) }, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(7) })
-        settingsItems.addView(text("Автомобильный режим", 20f, accent), LinearLayout.LayoutParams(-1, dp(54)))
-        settingsItems.addView(button("Переключить автомобильный режим", 16f) {
+        fun animButton(label: String, mode: Int, action: () -> Unit): TextView = button(label, 14f) { action() }.also { animButtons[mode] = it }
+        settingsItems.addView(sectionTitle("АНИМАЦИЯ ОБЛОЖКИ"), LinearLayout.LayoutParams(-1, dp(40)))
+        val animRows = listOf(
+            listOf(animButton("Видео 1", 1) { selectAnimation(1) }, animButton("Видео 2", 2) { selectAnimation(2) }),
+            listOf(animButton("Видео 3", 3) { selectAnimation(3) }, animButton("Видео 4", 4) { selectAnimation(4) }),
+            listOf(animButton("Мой GIF", 0) { gifPicker.launch(arrayOf("image/gif")) }, animButton("Без анимации", -1) { selectAnimation(-1) })
+        )
+        for (pair in animRows) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            pair.forEachIndexed { i, b ->
+                row.addView(b, LinearLayout.LayoutParams(0, dp(48), 1f).apply { if (i == 0) marginEnd = dp(4) else marginStart = dp(4) })
+            }
+            settingsItems.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+        }
+        settingsItems.addView(sectionTitle("АВТОМОБИЛЬНЫЙ РЕЖИМ"), LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(10) })
+        carToggle = button("", 14f) {
             carMode = !carMode
             getPreferences(MODE_PRIVATE).edit().putBoolean("car_mode", carMode).apply()
-            toast(if (carMode) "Автомобильный режим включён" else "Автомобильный режим выключен")
+            updateCarToggle()
             configurePlayerLayout()
-        }, LinearLayout.LayoutParams(-1, dp(60)))
+        }
+        settingsItems.addView(carToggle, LinearLayout.LayoutParams(-1, dp(52)))
         content.addView(settings, LinearLayout.LayoutParams(-1, -1))
         nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = panel(); setPadding(dp(4), dp(3), dp(4), dp(3)) }
         playerTab = button("Плеер", 15f) { showLibrary(false) }
@@ -429,6 +457,7 @@ class MainActivity : ComponentActivity() {
         showLibrary(false)
         val prefs = getPreferences(MODE_PRIVATE)
         carMode = prefs.getBoolean("car_mode", false)
+        updateCarToggle()
         animationMode = prefs.getInt("animation_mode", 1)
         prefs.getString("gif_uri", null)?.let { gifUri = Uri.parse(it) }
         displayAnimation()
@@ -480,6 +509,18 @@ class MainActivity : ComponentActivity() {
         settingsTab.setTextColor(Color.WHITE)
         markTabs(if (show) libraryTab else playerTab)
     }
+    private fun markAnimButtons() {
+        for ((mode, b) in animButtons) {
+            val on = mode == animationMode
+            b.background = if (on) activePanel() else panel()
+            b.setTextColor(if (on) accent else Color.WHITE)
+        }
+    }
+    private fun updateCarToggle() {
+        carToggle.text = "Автомобильный режим: " + if (carMode) "ВКЛ" else "ВЫКЛ"
+        carToggle.background = if (carMode) activePanel() else panel()
+        carToggle.setTextColor(if (carMode) accent else Color.WHITE)
+    }
     private fun showSettings() {
         player.visibility = View.GONE
         library.visibility = View.GONE
@@ -497,6 +538,7 @@ class MainActivity : ComponentActivity() {
         showLibrary(false)
     }
     private fun displayAnimation() {
+        markAnimButtons()
         video.stopPlayback()
         video.visibility = View.GONE
         gif.visibility = View.GONE
@@ -572,13 +614,13 @@ class MainActivity : ComponentActivity() {
         smallSize = if (landscape) 40 else 46
         bigSize = if (landscape) 54 else 68
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
-        spectrum.minimumHeight = dp(if (landscape) 38 else minSpectrum)
+        spectrum.minimumHeight = dp(if (landscape) 34 else minSpectrum)
         (spectrum.layoutParams as LinearLayout.LayoutParams).apply {
-            height = if (landscape) dp(38) else 0
-            weight = if (landscape) 0f else 3f
+            height = 0
+            weight = if (landscape) 2f else 4f
             topMargin = dp(if (landscape) 4 else 10); bottomMargin = dp(if (landscape) 4 else 10)
         }
-        for (sp in spacers) sp.visibility = if (landscape) View.GONE else View.VISIBLE
+        for (sp in spacers) sp.visibility = View.VISIBLE
         (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 58 else 86)
         (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
         for (i in 0 until controlsRow.childCount) {
@@ -588,6 +630,8 @@ class MainActivity : ComponentActivity() {
         }
         details.setPadding(dp(12), dp(if (landscape) 6 else 10), dp(12), dp(if (landscape) 6 else 10))
         trackName.maxLines = if (landscape) 1 else 2
+        trackArtist.textSize = if (landscape) 18f else 21f
+        trackName.textSize = if (landscape) 14f else 15f
         volumeRow.visibility = if (landscape) View.GONE else View.VISIBLE
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
@@ -672,7 +716,13 @@ class MainActivity : ComponentActivity() {
         }
     }
     // Flexible gap inside the player panel: shares leftover height in portrait, hidden in landscape.
-    private fun spacer(): View = View(this).also { spacers.add(it) }
+    private fun spacer(): View = Flex().also { spacers.add(it) }
+    private inner class Flex : View(this@MainActivity) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            setMeasuredDimension(getDefaultSize(suggestedMinimumWidth, widthMeasureSpec),
+                if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.EXACTLY) View.MeasureSpec.getSize(heightMeasureSpec) else suggestedMinimumHeight)
+        }
+    }
     private fun isLandscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     // Artist from the file tag; if missing, try the usual "Artist - Title" file name pattern.
     private fun splitTitle(rawTitle: String, tagArtist: String?): Pair<String, String> {

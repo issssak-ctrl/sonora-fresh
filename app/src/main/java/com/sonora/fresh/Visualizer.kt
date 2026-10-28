@@ -75,7 +75,7 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
         val out = FloatArray(bands)
         val binHz = sampleRate.toFloat() / n
         val fMin = 40f
-        val fMax = min(16000f, sampleRate / 2f - 1f)
+        val fMax = min(14000f, sampleRate / 2f - 1f)
         val ratio = fMax / fMin
         for (b in 0 until bands) {
             val lo = fMin * ratio.pow(b.toFloat() / bands)
@@ -88,8 +88,8 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
                 if (m > peak) peak = m
             }
             val mag = sqrt(peak) / (n / 4f)
-            // +14 dB tilt: high bands carry less energy, lift them so they stay visible.
-            val db = 20f * log10(mag + 1e-9f) + 14f * b / (bands - 1)
+            // +26 dB tilt: high bands carry far less energy, lift them so the right side stays alive.
+            val db = 20f * log10(mag + 1e-9f) + 26f * b / (bands - 1)
             val level = ((db + 65f) / 55f).coerceIn(0f, 1f)
             smooth[b] += (level - smooth[b]) * (if (level > smooth[b]) 0.7f else 0.2f)
             out[b] = smooth[b]
