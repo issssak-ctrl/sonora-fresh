@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
     private var smallSize = 46
     private var bigSize = 68
     private val steel = 0xff74808d.toInt()
-    private class Song(val id: String, val title: String, val uri: Uri, val durationMs: Long, val format: String, val folder: String, val added: Long)
+    private class Song(val id: String, val title: String, val uri: Uri, val durationMs: Long, val format: String, val folder: String, val added: Long, val artist: String, val name: String)
     private class Row(val song: Song?, val folder: String?, val count: Int)
     private class RowHolder(val root: LinearLayout, val icon: TextView, val title: TextView, val sub: TextView)
     private val allSongs = mutableListOf<Song>()
@@ -99,8 +99,6 @@ class MainActivity : ComponentActivity() {
     private val iconSpeakerHigh = 4
     private lateinit var headerBar: LinearLayout
     private lateinit var heart: IconView
-    private var cachedSongId: String? = null
-    private var cachedSong: Song? = null
     private val rows = mutableListOf<Row>()
     private var modeSongs: List<Song> = emptyList()
     private var filterMode = 0
@@ -126,8 +124,6 @@ class MainActivity : ComponentActivity() {
                 total.text = formatTime(duration)
             }
             if (!volumeDragging && ::volume.isInitialized) volume.progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val sub = subtitleText()
-            if (trackArtist.text.toString() != sub) trackArtist.text = sub
             handler.postDelayed(this, 500)
         }
     }
@@ -253,13 +249,17 @@ class MainActivity : ComponentActivity() {
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
         details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = darkPanel() }
         trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD; setShadowLayer(dp(7f), 0f, 0f, 0x8800d1ff.toInt()) }
-        trackArtist = text("SONORA · Now Playing", 13f, muted)
+        trackArtist = text("", 14f, 0xffb8c4cf.toInt()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         heart = IconView(iconHeart).apply { setOnClickListener { toggleFavorite() } }
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        titleRow.addView(trackName, LinearLayout.LayoutParams(0, -2, 1f))
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(trackArtist, LinearLayout.LayoutParams(-1, -2))
+            addView(trackName, LinearLayout.LayoutParams(-1, -2))
+        }
+        titleRow.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
         titleRow.addView(heart, LinearLayout.LayoutParams(dp(40), dp(40)))
         details.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
-        details.addView(trackArtist, LinearLayout.LayoutParams(-1, dp(28)))
         spectrum = SpectrumView()
         details.addView(spectrum, LinearLayout.LayoutParams(-1, dp(55)).apply { topMargin = dp(7); bottomMargin = dp(8) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
@@ -542,7 +542,7 @@ class MainActivity : ComponentActivity() {
     private fun refreshTrack() {
         val metadata = controller?.currentMediaItem?.mediaMetadata
         trackName.text = metadata?.title ?: "Выбери трек в библиотеке"
-        trackArtist.text = subtitleText()
+        trackArtist.text = metadata?.artist ?: ""
         playButton.text = if (controller?.isPlaying == true) "Ⅱ" else "▶"
         updateMini()
         updateHeart()
@@ -604,23 +604,6 @@ class MainActivity : ComponentActivity() {
                 (drawable as? Animatable)?.start()
             } else gif.setImageURI(uri)
         } catch (e: Exception) { trackArtist.text = "Ошибка GIF: ${e.message}" }
-    }
-    private fun currentSong(): Song? {
-        val id = controller?.currentMediaItem?.mediaId ?: return null
-        if (id != cachedSongId || (cachedSong == null && allSongs.isNotEmpty())) {
-            cachedSongId = id; cachedSong = allSongs.firstOrNull { it.id == id }
-        }
-        return cachedSong
-    }
-    // "SONORA · MP3 · 3:11"
-    private fun subtitleText(): String {
-        if (controller?.currentMediaItem == null) return "SONORA"
-        val song = currentSong()
-        val parts = mutableListOf("SONORA")
-        song?.format?.takeIf { it.isNotBlank() }?.let { parts.add(it) }
-        val duration = controller?.duration?.takeIf { it > 0 } ?: song?.durationMs?.takeIf { it > 0 }
-        if (duration != null) parts.add(formatTime(duration))
-        return parts.joinToString(" · ")
     }
     private fun updateHeart() {
         if (!::heart.isInitialized) return
@@ -691,8 +674,16 @@ class MainActivity : ComponentActivity() {
     // Flexible gap inside the player panel: shares leftover height in portrait, hidden in landscape.
     private fun spacer(): View = View(this).also { spacers.add(it) }
     private fun isLandscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // Artist from the file tag; if missing, try the usual "Artist - Title" file name pattern.
+    private fun splitTitle(rawTitle: String, tagArtist: String?): Pair<String, String> {
+        val artist = tagArtist?.trim()?.takeIf { it.isNotEmpty() && it != "<unknown>" }
+        if (artist != null) return artist to rawTitle.removePrefix("$artist - ").trim().ifEmpty { rawTitle }
+        val idx = rawTitle.indexOf(" - ")
+        if (idx > 0 && idx < rawTitle.length - 3) return rawTitle.substring(0, idx).trim() to rawTitle.substring(idx + 3).trim()
+        return "Неизвестный исполнитель" to rawTitle
+    }
     private fun toMediaItem(s: Song) = MediaItem.Builder().setMediaId(s.id).setUri(s.uri)
-        .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).build()).build()
+        .setMediaMetadata(MediaMetadata.Builder().setTitle(s.name).setArtist(s.artist).build()).build()
 
     private inner class LibraryAdapter : BaseAdapter() {
         override fun getCount() = rows.size
@@ -747,7 +738,8 @@ class MainActivity : ComponentActivity() {
             val list = modeSongs
             val index = list.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
             controller?.apply { setMediaItems(list.map { toMediaItem(it) }, index, 0); prepare(); play() }
-            trackName.text = song.title
+            trackName.text = song.name
+            trackArtist.text = song.artist
             showLibrary(false)
         } else if (row.folder != null) {
             selectedFolder = row.folder; applyFilter()
@@ -784,6 +776,7 @@ class MainActivity : ComponentActivity() {
         val item = controller?.currentMediaItem
         miniBar.visibility = if (item == null || isLandscape()) View.GONE else View.VISIBLE
         miniTitle.text = item?.mediaMetadata?.title ?: ""
+        miniSub.text = item?.mediaMetadata?.artist ?: ""
         miniPlay.text = if (controller?.isPlaying == true) "Ⅱ" else "▶"
     }
     private fun applyFilter() {
@@ -826,7 +819,7 @@ class MainActivity : ComponentActivity() {
         try {
             val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
             val columns = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DISPLAY_NAME, MediaStore.Audio.Media.TITLE,
-                MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.DATA)
+                MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.ARTIST)
             contentResolver.query(collection, columns, null, null, MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")?.use { cursor ->
                 val idI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val nameI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
@@ -834,13 +827,15 @@ class MainActivity : ComponentActivity() {
                 val durI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val addedI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 val dataI = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                val artistI = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
                 while (cursor.moveToNext() && songs.size < 10000) {
                     val name = cursor.getString(nameI) ?: continue
                     val title = cursor.getString(titleI)?.takeIf { it.isNotBlank() } ?: name.substringBeforeLast('.')
                     val uri = android.content.ContentUris.withAppendedId(collection, cursor.getLong(idI))
                     val path = if (dataI >= 0) cursor.getString(dataI) else null
                     val folder = path?.let { java.io.File(it).parentFile?.name } ?: "Музыка"
-                    songs.add(Song(uri.toString(), title, uri, cursor.getLong(durI), name.substringAfterLast('.', "").uppercase(Locale.US), folder, cursor.getLong(addedI)))
+                    val (artist, songName) = splitTitle(title, if (artistI >= 0) cursor.getString(artistI) else null)
+                    songs.add(Song(uri.toString(), title, uri, cursor.getLong(durI), name.substringAfterLast('.', "").uppercase(Locale.US), folder, cursor.getLong(addedI), artist, songName))
                 }
             }
             setLibrary(songs)
@@ -884,7 +879,9 @@ class MainActivity : ComponentActivity() {
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) folders.add(id to name)
                     else if (mime.startsWith("audio/") || ext.lowercase() in audioExt) {
                         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                        songs.add(Song(uri.toString(), name.substringBeforeLast('.'), uri, 0L, ext.uppercase(Locale.US), folderName, cursor.getLong(modCol)))
+                        val base = name.substringBeforeLast('.')
+                        val (artist, songName) = splitTitle(base, null)
+                        songs.add(Song(uri.toString(), base, uri, 0L, ext.uppercase(Locale.US), folderName, cursor.getLong(modCol), artist, songName))
                     }
                 }
                 folders.forEach { visit(it.first, it.second, depth + 1) }
