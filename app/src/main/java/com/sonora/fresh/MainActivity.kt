@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     private fun requestMusicScan() {
+        getPreferences(MODE_PRIVATE).edit().putString("source", "device").apply()
         val permission = if (Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_AUDIO
                          else android.Manifest.permission.READ_EXTERNAL_STORAGE
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
@@ -124,7 +125,7 @@ class MainActivity : ComponentActivity() {
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
-            getPreferences(MODE_PRIVATE).edit().putString("folder", uri.toString()).apply()
+            getPreferences(MODE_PRIVATE).edit().putString("folder", uri.toString()).putString("source", "folder").apply()
             scanFolder(uri)
         }
     }
@@ -208,7 +209,7 @@ class MainActivity : ComponentActivity() {
         }
         mediaBox = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         mediaBox.addView(gif, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
-        video = VideoView(this).apply { visibility = View.GONE }
+        video = VideoView(this).apply { visibility = View.GONE; setAudioFocusRequest(AudioManager.AUDIOFOCUS_NONE) }
         mediaBox.addView(video, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
         gifArea.addView(mediaBox, LinearLayout.LayoutParams(-1, -2))
         gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
@@ -361,7 +362,7 @@ class MainActivity : ComponentActivity() {
                 refreshTrack(); updateModes()
             } catch (e: Exception) { trackName.text = "Ошибка Media3: ${e.message}" }
         }, ContextCompat.getMainExecutor(this))
-        getPreferences(MODE_PRIVATE).getString("folder", null)?.let { scanFolder(Uri.parse(it)) }
+        handler.post { startupScan() }
         handler.post(ticker)
     }
     private fun markTabs(active: TextView) {
@@ -512,7 +513,7 @@ class MainActivity : ComponentActivity() {
             trackList.getChildAt(i).visibility = if (songTitles.getOrNull(i)?.contains(query, ignoreCase = true) == true) View.VISIBLE else View.GONE
         }
     }
-    private fun scanDeviceMusic() {
+    private fun scanDeviceMusic(quiet: Boolean = false) {
         val items = mutableListOf<MediaItem>()
         val names = mutableListOf<String>()
         try {
@@ -533,13 +534,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
             showSongs(items, names)
-            toast(if (items.isEmpty()) "Музыка не найдена. Возможно, BYD скрывает USB от сторонних приложений."
+            if (!quiet || items.isEmpty()) toast(if (items.isEmpty()) "Музыка не найдена. Возможно, BYD скрывает USB от сторонних приложений."
                   else "Найдено треков: ${items.size}")
         } catch (e: SecurityException) {
             toast("Нет доступа к аудиофайлам: ${e.localizedMessage}")
         } catch (e: Exception) {
             toast("Ошибка сканирования: ${e.localizedMessage}")
         }
+    }
+    // Fills the library list on launch (does not touch playback), so no manual scan is needed.
+    private fun startupScan() {
+        val prefs = getPreferences(MODE_PRIVATE)
+        val folder = prefs.getString("folder", null)
+        if (prefs.getString("source", "device") == "folder" && folder != null) { scanFolder(Uri.parse(folder)); return }
+        val permission = if (Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_AUDIO
+                         else android.Manifest.permission.READ_EXTERNAL_STORAGE
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) scanDeviceMusic(quiet = true)
+        else audioPermission.launch(permission)
     }
     private fun showSongs(items: List<MediaItem>, names: List<String>) {
         songTitles.clear(); songTitles.addAll(names)
