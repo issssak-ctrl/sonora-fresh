@@ -288,11 +288,11 @@ class MainActivity : ComponentActivity() {
         content.addView(library, LinearLayout.LayoutParams(-1, -1))
         library.addView(button("Сканировать музыку / USB", 15f) { requestMusicScan() }, LinearLayout.LayoutParams(-1, dp(52)))
         val pickFolder = button("Выбрать папку (если поддерживается)", 14f) {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addCategory(Intent.CATEGORY_DEFAULT)
-            if (intent.resolveActivity(packageManager) == null) {
-                toast("В системе нет выбора папок. Используйте «Сканировать музыку / USB»")
-            } else try {
+            // No resolveActivity() pre-check: on Android 11+ it wrongly returns null without a <queries> entry.
+            try {
                 folderPicker.launch(null)
+            } catch (e: android.content.ActivityNotFoundException) {
+                toast("В системе нет выбора папок. Используйте «Сканировать музыку / USB»")
             } catch (e: Exception) {
                 toast("Проводник недоступен: ${e.localizedMessage ?: "ошибка системы"}")
             }
@@ -546,7 +546,7 @@ class MainActivity : ComponentActivity() {
     private fun startupScan() {
         val prefs = getPreferences(MODE_PRIVATE)
         val folder = prefs.getString("folder", null)
-        if (prefs.getString("source", "device") == "folder" && folder != null) { scanFolder(Uri.parse(folder)); return }
+        if (prefs.getString("source", "device") == "folder" && folder != null) { scanFolder(Uri.parse(folder), quiet = true); return }
         val permission = if (Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_AUDIO
                          else android.Manifest.permission.READ_EXTERNAL_STORAGE
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) scanDeviceMusic(quiet = true)
@@ -561,14 +561,14 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(8), 0, dp(8), 0)
                 setOnClickListener {
                     controller?.apply { setMediaItems(items, index, 0); prepare(); play() }
-                    trackName.text = title.substringBeforeLast('.')
+                    trackName.text = items[index].mediaMetadata.title ?: title
                     showLibrary(false)
                 }
             }, LinearLayout.LayoutParams(-1, dp(52)))
         }
         filterSongs(search.text.toString())
     }
-    private fun scanFolder(tree: Uri) {
+    private fun scanFolder(tree: Uri, quiet: Boolean = false) {
         val items = mutableListOf<MediaItem>()
         songTitles.clear(); trackList.removeAllViews()
         val rootId = DocumentsContract.getTreeDocumentId(tree)
@@ -594,6 +594,7 @@ class MainActivity : ComponentActivity() {
         }
         try { visit(rootId, 0) } catch (e: Exception) { toast("Ошибка чтения папки: ${e.localizedMessage}") }
         showSongs(items, songTitles.toList())
+        if (!quiet || items.isEmpty()) toast(if (items.isEmpty()) "В выбранной папке нет аудиофайлов" else "Найдено треков: ${items.size}")
     }
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
