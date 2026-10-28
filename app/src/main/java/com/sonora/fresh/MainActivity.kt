@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
     private class Row(val song: Song?, val folder: String?, val count: Int)
     private class RowHolder(val root: LinearLayout, val icon: TextView, val title: TextView, val sub: TextView)
     private val allSongs = mutableListOf<Song>()
+    private val spacers = mutableListOf<View>()
     private val rows = mutableListOf<Row>()
     private var modeSongs: List<Song> = emptyList()
     private var filterMode = 0
@@ -253,8 +254,10 @@ class MainActivity : ComponentActivity() {
             val size = if (index == 2) dp(bigSize) else dp(smallSize)
             controls.addView(view, LinearLayout.LayoutParams(size, size).apply { marginStart = dp(3); marginEnd = dp(3) })
         }
+        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
         details.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
         controlsRow = controls
+        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
         controls.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             val row = v as LinearLayout
             val available = row.width - row.paddingLeft - row.paddingRight
@@ -523,13 +526,14 @@ class MainActivity : ComponentActivity() {
         (gifArea.parent as? ViewGroup)?.removeView(gifArea)
         (details.parent as? ViewGroup)?.removeView(details)
         player.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-        player.gravity = if (landscape) Gravity.TOP else Gravity.CENTER_VERTICAL
+        player.gravity = Gravity.TOP
         if (landscape) {
             player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 1.2f).apply { marginEnd = dp(6) })
             player.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
         } else {
-            player.addView(gifArea, LinearLayout.LayoutParams(-1, -2))
-            player.addView(details, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+            // Portrait: video on top, the player panel stretches to fill the rest of the screen.
+            player.addView(gifArea, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            player.addView(details, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(8); bottomMargin = dp(6) })
         }
         gif.scaleType = ImageView.ScaleType.FIT_CENTER
         gif.adjustViewBounds = true
@@ -539,9 +543,14 @@ class MainActivity : ComponentActivity() {
         // Compact metrics in landscape so the whole panel fits; roomy in portrait to fill the screen.
         smallSize = if (landscape) 40 else 46
         bigSize = if (landscape) 54 else 68
+        val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
+        spectrum.minimumHeight = dp(if (landscape) 38 else minSpectrum)
         (spectrum.layoutParams as LinearLayout.LayoutParams).apply {
-            height = dp(if (landscape) 38 else 92); topMargin = dp(if (landscape) 4 else 10); bottomMargin = dp(if (landscape) 4 else 10)
+            height = if (landscape) dp(38) else 0
+            weight = if (landscape) 0f else 3f
+            topMargin = dp(if (landscape) 4 else 10); bottomMargin = dp(if (landscape) 4 else 10)
         }
+        for (sp in spacers) sp.visibility = if (landscape) View.GONE else View.VISIBLE
         (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 58 else 86)
         (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
         for (i in 0 until controlsRow.childCount) {
@@ -568,6 +577,8 @@ class MainActivity : ComponentActivity() {
             } else gif.setImageURI(uri)
         } catch (e: Exception) { trackArtist.text = "Ошибка GIF: ${e.message}" }
     }
+    // Flexible gap inside the player panel: shares leftover height in portrait, hidden in landscape.
+    private fun spacer(): View = View(this).also { spacers.add(it) }
     private fun isLandscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     private fun toMediaItem(s: Song) = MediaItem.Builder().setMediaId(s.id).setUri(s.uri)
         .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).build()).build()
