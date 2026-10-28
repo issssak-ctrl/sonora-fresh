@@ -29,6 +29,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import android.media.MediaPlayer
+import android.media.AudioManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -74,6 +75,16 @@ class MainActivity : ComponentActivity() {
     private lateinit var trackList: LinearLayout
     private lateinit var spectrum: View
     private lateinit var search: EditText
+    private lateinit var header: TextView
+    private lateinit var nav: LinearLayout
+    private lateinit var controlsRow: LinearLayout
+    private lateinit var volumeRow: LinearLayout
+    private lateinit var volume: SeekBar
+    private lateinit var audio: AudioManager
+    private var volumeDragging = false
+    private var smallSize = 46
+    private var bigSize = 68
+    private val steel = 0xff74808d.toInt()
     private lateinit var playerTab: TextView
     private lateinit var libraryTab: TextView
     private val songTitles = mutableListOf<String>()
@@ -86,6 +97,7 @@ class MainActivity : ComponentActivity() {
                 elapsed.text = formatTime(p.currentPosition)
                 total.text = formatTime(duration)
             }
+            if (!volumeDragging && ::volume.isInitialized) volume.progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
             handler.postDelayed(this, 500)
         }
     }
@@ -120,18 +132,31 @@ class MainActivity : ComponentActivity() {
     private fun text(value: String, size: Float, color: Int = Color.WHITE) = TextView(this).apply {
         this.text = value; textSize = size; setTextColor(color); gravity = Gravity.CENTER_VERTICAL
     }
-    // Flat cyan outlined panels: predictable on all densities, no bitmap assets.
-    private fun panel(radius: Float = 12f, stroke: Int = accent): Drawable = GradientDrawable().apply {
+    // Brushed-metal look built from gradients (no bitmap assets).
+    private val metalColors = intArrayOf(0xff3b444e.toInt(), 0xff171d24.toInt(), 0xff252d36.toInt(), 0xff0e1318.toInt())
+    private fun panel(radius: Float = 12f, stroke: Int = steel): Drawable =
+        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, metalColors).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(radius)
+            setStroke(dp(1.5f).toInt(), stroke)
+        }
+    private fun darkPanel(radius: Float = 14f, stroke: Int = steel): Drawable =
+        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xff121a22.toInt(), 0xff070b10.toInt())).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(radius)
+            setStroke(dp(1.5f).toInt(), stroke)
+        }
+    private fun activePanel(radius: Float = 12f): Drawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(radius)
-        setColor(0xff06111c.toInt())
-        setStroke(dp(1), stroke)
+        setColor(0xff06141f.toInt())
+        setStroke(dp(2f).toInt(), accent)
     }
-    private fun circle(): Drawable = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(0xff030a12.toInt())
-        setStroke(dp(1.5f).toInt(), accent)
-    }
+    private fun circle(ring: Int = steel, ringWidth: Float = 2f): Drawable =
+        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, metalColors).apply {
+            shape = GradientDrawable.OVAL
+            setStroke(dp(ringWidth).toInt(), ring)
+        }
     private fun chrome(round: Boolean = false): Drawable = if (round) circle() else panel()
     private inner class SpectrumView : View(this@MainActivity) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -165,9 +190,10 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        audio = getSystemService(AUDIO_SERVICE) as AudioManager
         window.statusBarColor = background; window.navigationBarColor = background
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background) }
-        val header = text("●  SONORA", 23f, Color.WHITE).apply { typeface = Typeface.DEFAULT_BOLD; setPadding(dp(16), 0, 0, 0); background = panel(0f, 0xff153d50.toInt()) }
+        header = text("SONORA", 23f, 0xffe6edf3.toInt()).apply { typeface = Typeface.DEFAULT_BOLD; letterSpacing = 0.12f; setPadding(dp(18), 0, 0, 0); background = panel(10f) }
         root.addView(header, LinearLayout.LayoutParams(-1, dp(52)))
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -187,8 +213,8 @@ class MainActivity : ComponentActivity() {
         gifArea.addView(mediaBox, LinearLayout.LayoutParams(-1, -2))
         gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
-        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), dp(10), dp(10), dp(10)); background = panel() }
-        trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD }
+        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = darkPanel() }
+        trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD; setShadowLayer(dp(7f), 0f, 0f, 0x8800d1ff.toInt()) }
         trackArtist = text("SONORA · Now Playing", 13f, muted)
         details.addView(trackName, LinearLayout.LayoutParams(-1, -2))
         details.addView(trackArtist, LinearLayout.LayoutParams(-1, dp(28)))
@@ -205,18 +231,19 @@ class MainActivity : ComponentActivity() {
             controller?.let { it.repeatMode = when (it.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF }; updateModes() }
         }
         listOf(shuffleButton, prev, playButton, next, repeatButton).forEachIndexed { index, view ->
-            view.background = circle()
+            view.background = if (index == 2) circle(accent, 3f) else circle()
             // Equal width and height are essential: circles must never turn into ovals.
-            val size = if (index == 2) dp(62) else dp(44)
+            val size = if (index == 2) dp(bigSize) else dp(smallSize)
             controls.addView(view, LinearLayout.LayoutParams(size, size).apply { marginStart = dp(3); marginEnd = dp(3) })
         }
-        details.addView(controls, LinearLayout.LayoutParams(-1, dp(76)))
+        details.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
+        controlsRow = controls
         controls.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             val row = v as LinearLayout
             val available = row.width - row.paddingLeft - row.paddingRight
             if (available <= 0) return@addOnLayoutChangeListener
-            val small = minOf(dp(44), (available - dp(62) - dp(30)) / 4).coerceAtLeast(dp(26))
-            val large = minOf(dp(62), (available - dp(30) - 4 * small)).coerceAtLeast(dp(34))
+            val small = minOf(dp(smallSize), (available - dp(bigSize) - dp(30)) / 4).coerceAtLeast(dp(26))
+            val large = minOf(dp(bigSize), (available - dp(30) - 4 * small)).coerceAtLeast(dp(34))
             for (i in 0 until row.childCount) {
                 val size = if (i == 2) large else small
                 val child = row.getChildAt(i)
@@ -237,6 +264,24 @@ class MainActivity : ComponentActivity() {
         times.addView(elapsed, LinearLayout.LayoutParams(0, dp(22), 1f))
         times.addView(total, LinearLayout.LayoutParams(0, dp(22), 1f))
         details.addView(times)
+        volumeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        volumeRow.addView(text("−", 22f, muted).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(28), dp(38)))
+        volume = SeekBar(this).apply {
+            max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            progressTintList = android.content.res.ColorStateList.valueOf(accent)
+            thumbTintList = android.content.res.ColorStateList.valueOf(accent)
+        }
+        volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) try { audio.setStreamVolume(AudioManager.STREAM_MUSIC, progress, 0) } catch (_: Exception) {}
+            }
+            override fun onStartTrackingTouch(bar: SeekBar?) { volumeDragging = true }
+            override fun onStopTrackingTouch(bar: SeekBar?) { volumeDragging = false }
+        })
+        volumeRow.addView(volume, LinearLayout.LayoutParams(0, dp(38), 1f))
+        volumeRow.addView(text("+", 22f, muted).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(28), dp(38)))
+        details.addView(volumeRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         configurePlayerLayout()
         library = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         content.addView(library, LinearLayout.LayoutParams(-1, -1))
@@ -281,7 +326,7 @@ class MainActivity : ComponentActivity() {
             configurePlayerLayout()
         }, LinearLayout.LayoutParams(-1, dp(60)))
         content.addView(settings, LinearLayout.LayoutParams(-1, -1))
-        val nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = panel(); setPadding(dp(4), dp(3), dp(4), dp(3)) }
+        nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = panel(); setPadding(dp(4), dp(3), dp(4), dp(3)) }
         playerTab = button("Плеер", 15f) { showLibrary(false) }
         libraryTab = button("Библиотека", 15f) { showLibrary(true) }
         settingsTab = button("Настройки", 15f) { showSettings() }
@@ -290,11 +335,12 @@ class MainActivity : ComponentActivity() {
         nav.addView(settingsTab, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(5) })
         root.addView(nav, LinearLayout.LayoutParams(-1, dp(61)))
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(dp(12), bars.top + dp(3), dp(12), bars.bottom + dp(5))
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(bars.left + dp(12), bars.top + dp(3), bars.right + dp(12), bars.bottom + dp(5))
             insets
         }
         setContentView(root)
+        applyChrome()
         showLibrary(false)
         val prefs = getPreferences(MODE_PRIVATE)
         carMode = prefs.getBoolean("car_mode", false)
@@ -318,6 +364,24 @@ class MainActivity : ComponentActivity() {
         getPreferences(MODE_PRIVATE).getString("folder", null)?.let { scanFolder(Uri.parse(it)) }
         handler.post(ticker)
     }
+    private fun markTabs(active: TextView) {
+        for (t in listOf(playerTab, libraryTab, settingsTab)) {
+            val on = t === active
+            t.background = if (on) activePanel() else panel()
+            t.setTextColor(if (on) accent else Color.WHITE)
+            t.setShadowLayer(if (on) dp(6f) else 0f, 0f, 0f, accent)
+        }
+    }
+    // Header / tab bar sizes depend on orientation: landscape must fit in a short screen.
+    private fun applyChrome() {
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        header.textSize = if (landscape) 19f else 23f
+        header.layoutParams = (header.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 40 else 52) }
+        nav.layoutParams = (nav.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 52 else 61) }
+        for (t in listOf(playerTab, libraryTab, settingsTab)) {
+            t.layoutParams = (t.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 42 else 52) }
+        }
+    }
     private fun showLibrary(show: Boolean) {
         settings.visibility = View.GONE
         library.visibility = if (show) View.VISIBLE else View.GONE
@@ -327,6 +391,7 @@ class MainActivity : ComponentActivity() {
         playerTab.setTextColor(if (show) Color.WHITE else accent)
         libraryTab.setTextColor(if (show) accent else Color.WHITE)
         settingsTab.setTextColor(Color.WHITE)
+        markTabs(if (show) libraryTab else playerTab)
     }
     private fun showSettings() {
         player.visibility = View.GONE
@@ -336,6 +401,7 @@ class MainActivity : ComponentActivity() {
         playerTab.setTextColor(Color.WHITE)
         libraryTab.setTextColor(Color.WHITE)
         settingsTab.setTextColor(accent)
+        markTabs(settingsTab)
     }
     private fun selectAnimation(mode: Int) {
         animationMode = mode
@@ -409,9 +475,26 @@ class MainActivity : ComponentActivity() {
         gif.maxHeight = if (landscape) (resources.displayMetrics.heightPixels * 0.70f).toInt() else (resources.displayMetrics.heightPixels * 0.52f).toInt()
         // wrap_content and adjustViewBounds preserve aspect ratio; maxHeight prevents oversized GIF.
         gif.layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
+        // Compact metrics in landscape so the whole panel fits; roomy in portrait to fill the screen.
+        smallSize = if (landscape) 40 else 46
+        bigSize = if (landscape) 54 else 68
+        (spectrum.layoutParams as LinearLayout.LayoutParams).apply {
+            height = dp(if (landscape) 38 else 92); topMargin = dp(if (landscape) 4 else 10); bottomMargin = dp(if (landscape) 4 else 10)
+        }
+        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 58 else 86)
+        (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
+        for (i in 0 until controlsRow.childCount) {
+            val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
+            val size = dp(if (i == 2) bigSize else smallSize)
+            lp.width = size; lp.height = size
+        }
+        details.setPadding(dp(12), dp(if (landscape) 6 else 10), dp(12), dp(if (landscape) 6 else 10))
+        trackName.maxLines = if (landscape) 1 else 2
+        volumeRow.visibility = if (landscape) View.GONE else View.VISIBLE
+        controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
-    override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); configurePlayerLayout() }
+    override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); applyChrome(); configurePlayerLayout() }
     override fun onPause() { super.onPause(); video.pause() }
     override fun onResume() { super.onResume(); if (::video.isInitialized && animationMode > 0 && player.visibility == View.VISIBLE) video.start() }
     private fun displayGif() {
