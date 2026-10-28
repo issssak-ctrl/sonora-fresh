@@ -85,6 +85,22 @@ class MainActivity : ComponentActivity() {
     private var smallSize = 46
     private var bigSize = 68
     private val steel = 0xff74808d.toInt()
+    private class Song(val id: String, val title: String, val uri: Uri, val durationMs: Long, val format: String, val folder: String, val added: Long)
+    private class Row(val song: Song?, val folder: String?, val count: Int)
+    private class RowHolder(val root: LinearLayout, val icon: TextView, val title: TextView, val sub: TextView)
+    private val allSongs = mutableListOf<Song>()
+    private val rows = mutableListOf<Row>()
+    private var modeSongs: List<Song> = emptyList()
+    private var filterMode = 0
+    private var selectedFolder: String? = null
+    private lateinit var libraryAdapter: LibraryAdapter
+    private lateinit var actionsRow: LinearLayout
+    private lateinit var chipsRow: LinearLayout
+    private lateinit var chips: List<TextView>
+    private lateinit var miniBar: LinearLayout
+    private lateinit var miniTitle: TextView
+    private lateinit var miniSub: TextView
+    private lateinit var miniPlay: TextView
     private lateinit var playerTab: TextView
     private lateinit var libraryTab: TextView
     private val songTitles = mutableListOf<String>()
@@ -286,30 +302,70 @@ class MainActivity : ComponentActivity() {
         configurePlayerLayout()
         library = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         content.addView(library, LinearLayout.LayoutParams(-1, -1))
-        library.addView(button("Сканировать музыку / USB", 15f) { requestMusicScan() }, LinearLayout.LayoutParams(-1, dp(52)))
-        val pickFolder = button("Выбрать папку (если поддерживается)", 14f) {
+        // Row 1: compact actions (in landscape the filter chips join this row)
+        actionsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val scanBtn = button("Сканировать", 14f) { requestMusicScan() }
+        val folderBtn = button("Папка", 14f) {
             // No resolveActivity() pre-check: on Android 11+ it wrongly returns null without a <queries> entry.
             try {
                 folderPicker.launch(null)
             } catch (e: android.content.ActivityNotFoundException) {
-                toast("В системе нет выбора папок. Используйте «Сканировать музыку / USB»")
+                toast("В системе нет выбора папок. Используйте «Сканировать»")
             } catch (e: Exception) {
                 toast("Проводник недоступен: ${e.localizedMessage ?: "ошибка системы"}")
             }
         }
-        library.addView(pickFolder, LinearLayout.LayoutParams(-1, dp(48)))
+        actionsRow.addView(scanBtn, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(4) })
+        actionsRow.addView(folderBtn, LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(4) })
+        library.addView(actionsRow, LinearLayout.LayoutParams(-1, -2))
+        // Row 2: metal search field
         search = EditText(this).apply {
-            hint = "Поиск по трекам"; setHintTextColor(muted); setTextColor(Color.WHITE); textSize = 15f
-            isSingleLine = true; setPadding(dp(12), 0, dp(12), 0)
+            hint = "Поиск по трекам…"; setHintTextColor(muted); setTextColor(Color.WHITE); textSize = 15f
+            isSingleLine = true; setPadding(dp(16), 0, dp(16), 0); background = darkPanel(22f)
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { filterSongs(s?.toString().orEmpty()) }
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { applyFilter() }
                 override fun afterTextChanged(s: android.text.Editable?) {}
             })
         }
-        library.addView(search, LinearLayout.LayoutParams(-1, dp(50)))
-        trackList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        library.addView(ScrollView(this).apply { isFillViewport = true; addView(trackList) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        library.addView(search, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(6) })
+        // Row 3: filter chips
+        chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        chips = listOf(
+            button("Все", 14f) { setFilterMode(0) },
+            button("Папки", 14f) { setFilterMode(1) },
+            button("Недавние", 14f) { setFilterMode(2) }
+        )
+        markChips()
+        library.addView(chipsRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(4) })
+        // Track list (recycling ListView, fast even with thousands of songs)
+        libraryAdapter = LibraryAdapter()
+        val listView = ListView(this).apply {
+            divider = null; dividerHeight = 0; overScrollMode = View.OVER_SCROLL_NEVER
+            setSelector(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            adapter = libraryAdapter
+            setOnItemClickListener { _, _, pos, _ -> onRowClick(rows[pos]) }
+        }
+        library.addView(listView, LinearLayout.LayoutParams(-1, 0, 1f))
+        // Mini-player
+        miniTitle = text("", 14f).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD }
+        miniSub = text("SONORA", 12f, muted)
+        val miniText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
+            addView(miniTitle, LinearLayout.LayoutParams(-1, -2))
+            addView(miniSub, LinearLayout.LayoutParams(-1, -2))
+        }
+        miniPlay = button("▶", 18f) { controller?.let { if (it.isPlaying) it.pause() else it.play() } }.apply { background = circle(accent, 2f) }
+        val miniNext = button("❯❯", 14f) { controller?.seekToNextMediaItem() }.apply { background = circle() }
+        miniBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            background = panel(14f); setPadding(dp(14), 0, dp(8), 0); visibility = View.GONE
+            setOnClickListener { showLibrary(false) }
+        }
+        miniBar.addView(miniText, LinearLayout.LayoutParams(0, -2, 1f))
+        miniBar.addView(miniPlay, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) })
+        miniBar.addView(miniNext, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) })
+        library.addView(miniBar, LinearLayout.LayoutParams(-1, dp(60)).apply { topMargin = dp(6) })
         settings = ScrollView(this).apply { visibility = View.GONE }
         val settingsItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(8), dp(4), dp(12)) }
         settings.addView(settingsItems)
@@ -355,7 +411,7 @@ class MainActivity : ComponentActivity() {
                 controller = controllerFuture?.get()
                 controller?.addListener(object : Player.Listener {
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { refreshTrack() }
-                    override fun onIsPlayingChanged(isPlaying: Boolean) { playButton.text = if (isPlaying) "Ⅱ" else "▶"; spectrum.invalidate() }
+                    override fun onIsPlayingChanged(isPlaying: Boolean) { playButton.text = if (isPlaying) "Ⅱ" else "▶"; spectrum.invalidate(); updateMini() }
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { updateModes() }
                     override fun onRepeatModeChanged(repeatMode: Int) { updateModes() }
                 })
@@ -382,6 +438,8 @@ class MainActivity : ComponentActivity() {
         for (t in listOf(playerTab, libraryTab, settingsTab)) {
             t.layoutParams = (t.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 42 else 52) }
         }
+        layoutLibrary()
+        updateMini()
     }
     private fun showLibrary(show: Boolean) {
         settings.visibility = View.GONE
@@ -456,6 +514,8 @@ class MainActivity : ComponentActivity() {
         trackName.text = metadata?.title ?: "Выбери трек в библиотеке"
         trackArtist.text = metadata?.artist ?: "SONORA · Now Playing"
         playButton.text = if (controller?.isPlaying == true) "Ⅱ" else "▶"
+        updateMini()
+        if (::libraryAdapter.isInitialized) libraryAdapter.notifyDataSetChanged()
     }
     private fun configurePlayerLayout() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -508,34 +568,158 @@ class MainActivity : ComponentActivity() {
             } else gif.setImageURI(uri)
         } catch (e: Exception) { trackArtist.text = "Ошибка GIF: ${e.message}" }
     }
-    private fun filterSongs(query: String) {
-        for (i in 0 until trackList.childCount) {
-            trackList.getChildAt(i).visibility = if (songTitles.getOrNull(i)?.contains(query, ignoreCase = true) == true) View.VISIBLE else View.GONE
+    private fun isLandscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    private fun toMediaItem(s: Song) = MediaItem.Builder().setMediaId(s.id).setUri(s.uri)
+        .setMediaMetadata(MediaMetadata.Builder().setTitle(s.title).build()).build()
+
+    private inner class LibraryAdapter : BaseAdapter() {
+        override fun getCount() = rows.size
+        override fun getItem(position: Int): Any = rows[position]
+        override fun getItemId(position: Int) = position.toLong()
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+            val h = (convertView?.tag as? RowHolder) ?: makeRowHolder()
+            val row = rows[position]
+            val song = row.song
+            val playing = song != null && controller?.currentMediaItem?.mediaId == song.id
+            if (song != null) {
+                h.icon.text = "♫"
+                h.title.text = song.title
+                val parts = mutableListOf<String>()
+                if (song.durationMs > 0) parts.add(formatTime(song.durationMs))
+                if (song.format.isNotBlank()) parts.add(song.format)
+                h.sub.text = parts.joinToString(" · ")
+            } else if (row.folder != null) {
+                h.icon.text = "☰"; h.title.text = row.folder; h.sub.text = "${row.count} треков"
+            } else {
+                h.icon.text = "❮"; h.title.text = "Назад к папкам"; h.sub.text = selectedFolder ?: ""
+            }
+            h.title.setTextColor(if (playing) accent else Color.WHITE)
+            h.icon.setTextColor(if (playing) accent else Color.WHITE)
+            h.root.background = if (playing) activePanel(10f) else null
+            return h.root
         }
     }
+    private fun makeRowHolder(): RowHolder {
+        val icon = text("♫", 18f).apply { gravity = Gravity.CENTER; background = panel(10f) }
+        val title = text("", 15f).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        val sub = text("", 12f, muted).apply { maxLines = 1 }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL
+            addView(title, LinearLayout.LayoutParams(-1, -2))
+            addView(sub, LinearLayout.LayoutParams(-1, -2))
+        }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+            layoutParams = AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60))
+        }
+        root.addView(icon, LinearLayout.LayoutParams(dp(44), dp(44)))
+        root.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
+        val holder = RowHolder(root, icon, title, sub)
+        root.tag = holder
+        return holder
+    }
+    private fun onRowClick(row: Row) {
+        val song = row.song
+        if (song != null) {
+            val list = modeSongs
+            val index = list.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+            controller?.apply { setMediaItems(list.map { toMediaItem(it) }, index, 0); prepare(); play() }
+            trackName.text = song.title
+            showLibrary(false)
+        } else if (row.folder != null) {
+            selectedFolder = row.folder; applyFilter()
+        } else {
+            selectedFolder = null; applyFilter()
+        }
+    }
+    private fun setFilterMode(mode: Int) {
+        filterMode = mode; selectedFolder = null
+        markChips(); applyFilter()
+    }
+    private fun markChips() {
+        chips.forEachIndexed { i, c ->
+            val on = i == filterMode
+            c.background = if (on) activePanel(19f) else panel(19f)
+            c.setTextColor(if (on) accent else Color.WHITE)
+        }
+    }
+    // Chips sit in their own row in portrait and move up beside the buttons in landscape (short screen).
+    private fun layoutLibrary() {
+        val landscape = isLandscape()
+        val target = if (landscape) actionsRow else chipsRow
+        for (i in 0 until 2) (actionsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 38 else 44)
+        for (c in chips) {
+            (c.parent as? ViewGroup)?.removeView(c)
+            target.addView(c, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+        }
+        chipsRow.visibility = if (landscape) View.GONE else View.VISIBLE
+        (search.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 40 else 46)
+        search.requestLayout(); actionsRow.requestLayout()
+    }
+    private fun updateMini() {
+        if (!::miniBar.isInitialized) return
+        val item = controller?.currentMediaItem
+        miniBar.visibility = if (item == null || isLandscape()) View.GONE else View.VISIBLE
+        miniTitle.text = item?.mediaMetadata?.title ?: ""
+        miniPlay.text = if (controller?.isPlaying == true) "Ⅱ" else "▶"
+    }
+    private fun applyFilter() {
+        val q = if (::search.isInitialized) search.text.toString().trim() else ""
+        fun matches(s: Song) = q.isEmpty() || s.title.contains(q, ignoreCase = true)
+        rows.clear()
+        when (filterMode) {
+            1 -> if (selectedFolder == null) {
+                modeSongs = emptyList()
+                for ((f, list) in allSongs.groupBy { it.folder }.toSortedMap(String.CASE_INSENSITIVE_ORDER)) {
+                    if (q.isEmpty() || f.contains(q, ignoreCase = true)) rows.add(Row(null, f, list.size))
+                }
+            } else {
+                modeSongs = allSongs.filter { it.folder == selectedFolder }
+                rows.add(Row(null, null, 0))
+                modeSongs.filter { matches(it) }.forEach { rows.add(Row(it, null, 0)) }
+            }
+            2 -> {
+                modeSongs = allSongs.sortedByDescending { it.added }.take(50)
+                modeSongs.filter { matches(it) }.forEach { rows.add(Row(it, null, 0)) }
+            }
+            else -> {
+                modeSongs = allSongs
+                allSongs.filter { matches(it) }.forEach { rows.add(Row(it, null, 0)) }
+            }
+        }
+        libraryAdapter.notifyDataSetChanged()
+    }
+    private fun setLibrary(songs: List<Song>) {
+        allSongs.clear(); allSongs.addAll(songs)
+        selectedFolder = null
+        applyFilter()
+    }
     private fun scanDeviceMusic(quiet: Boolean = false) {
-        val items = mutableListOf<MediaItem>()
-        val names = mutableListOf<String>()
+        val songs = mutableListOf<Song>()
         try {
-            val columns = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DISPLAY_NAME,
-                MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.IS_MUSIC)
             val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            val columns = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DISPLAY_NAME, MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.DATA)
             contentResolver.query(collection, columns, null, null, MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")?.use { cursor ->
-                val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
-                val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                while (cursor.moveToNext() && items.size < 10000) {
-                    val name = cursor.getString(nameIndex) ?: continue
-                    val title = cursor.getString(titleIndex)?.takeIf { it.isNotBlank() } ?: name.substringBeforeLast('.')
-                    val uri = android.content.ContentUris.withAppendedId(collection, cursor.getLong(idIndex))
-                    items.add(MediaItem.Builder().setUri(uri)
-                        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build()).build())
-                    names.add(title)
+                val idI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val nameI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val titleI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val durI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val addedI = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                val dataI = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                while (cursor.moveToNext() && songs.size < 10000) {
+                    val name = cursor.getString(nameI) ?: continue
+                    val title = cursor.getString(titleI)?.takeIf { it.isNotBlank() } ?: name.substringBeforeLast('.')
+                    val uri = android.content.ContentUris.withAppendedId(collection, cursor.getLong(idI))
+                    val path = if (dataI >= 0) cursor.getString(dataI) else null
+                    val folder = path?.let { java.io.File(it).parentFile?.name } ?: "Музыка"
+                    songs.add(Song(uri.toString(), title, uri, cursor.getLong(durI), name.substringAfterLast('.', "").uppercase(Locale.US), folder, cursor.getLong(addedI)))
                 }
             }
-            showSongs(items, names)
-            if (!quiet || items.isEmpty()) toast(if (items.isEmpty()) "Музыка не найдена. Возможно, BYD скрывает USB от сторонних приложений."
-                  else "Найдено треков: ${items.size}")
+            setLibrary(songs)
+            if (!quiet || songs.isEmpty()) toast(if (songs.isEmpty()) "Музыка не найдена. Возможно, BYD скрывает USB от сторонних приложений."
+                  else "Найдено треков: ${songs.size}")
         } catch (e: SecurityException) {
             toast("Нет доступа к аудиофайлам: ${e.localizedMessage}")
         } catch (e: Exception) {
@@ -552,49 +736,40 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) scanDeviceMusic(quiet = true)
         else audioPermission.launch(permission)
     }
-    private fun showSongs(items: List<MediaItem>, names: List<String>) {
-        songTitles.clear(); songTitles.addAll(names)
-        trackList.removeAllViews()
-        names.forEachIndexed { index, title ->
-            trackList.addView(text("♫   $title", 15f).apply {
-                maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-                setPadding(dp(8), 0, dp(8), 0)
-                setOnClickListener {
-                    controller?.apply { setMediaItems(items, index, 0); prepare(); play() }
-                    trackName.text = items[index].mediaMetadata.title ?: title
-                    showLibrary(false)
-                }
-            }, LinearLayout.LayoutParams(-1, dp(52)))
-        }
-        filterSongs(search.text.toString())
-    }
     private fun scanFolder(tree: Uri, quiet: Boolean = false) {
-        val items = mutableListOf<MediaItem>()
-        songTitles.clear(); trackList.removeAllViews()
+        val songs = mutableListOf<Song>()
         val rootId = DocumentsContract.getTreeDocumentId(tree)
-        fun visit(docId: String, depth: Int) {
-            if (depth > 12 || items.size >= 3000) return
+        val audioExt = setOf("mp3", "flac", "wav", "m4a", "ogg", "opus", "aac")
+        fun visit(docId: String, folderName: String, depth: Int) {
+            if (depth > 12 || songs.size >= 3000) return
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
-            contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)?.use { cursor ->
+            contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null)?.use { cursor ->
                 val idCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val mimeCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                val folders = mutableListOf<String>()
+                val modCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                val folders = mutableListOf<Pair<String, String>>()
                 while (cursor.moveToNext()) {
-                    val id = cursor.getString(idCol); val name = cursor.getString(nameCol); val mime = cursor.getString(mimeCol)
-                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) folders.add(id)
-                    else if (mime.startsWith("audio/") || name.substringAfterLast('.', "").lowercase() in setOf("mp3", "flac", "wav", "m4a", "ogg", "opus", "aac")) {
+                    val id = cursor.getString(idCol) ?: continue
+                    val name = cursor.getString(nameCol) ?: continue
+                    val mime = cursor.getString(mimeCol) ?: ""
+                    val ext = name.substringAfterLast('.', "")
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) folders.add(id to name)
+                    else if (mime.startsWith("audio/") || ext.lowercase() in audioExt) {
                         val uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                        songTitles.add(name)
-                        items.add(MediaItem.Builder().setUri(uri).setMediaMetadata(MediaMetadata.Builder().setTitle(name.substringBeforeLast('.')).build()).build())
+                        songs.add(Song(uri.toString(), name.substringBeforeLast('.'), uri, 0L, ext.uppercase(Locale.US), folderName, cursor.getLong(modCol)))
                     }
                 }
-                folders.forEach { visit(it, depth + 1) }
+                folders.forEach { visit(it.first, it.second, depth + 1) }
             }
         }
-        try { visit(rootId, 0) } catch (e: Exception) { toast("Ошибка чтения папки: ${e.localizedMessage}") }
-        showSongs(items, songTitles.toList())
-        if (!quiet || items.isEmpty()) toast(if (items.isEmpty()) "В выбранной папке нет аудиофайлов" else "Найдено треков: ${items.size}")
+        try {
+            visit(rootId, rootId.substringAfterLast('/').substringAfterLast(':').ifBlank { "Музыка" }, 0)
+        } catch (e: Exception) { toast("Ошибка чтения папки: ${e.localizedMessage}") }
+        songs.sortBy { it.title.lowercase() }
+        setLibrary(songs)
+        if (!quiet || songs.isEmpty()) toast(if (songs.isEmpty()) "В выбранной папке нет аудиофайлов" else "Найдено треков: ${songs.size}")
     }
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
