@@ -16,7 +16,7 @@ import kotlin.math.sqrt
 
 /** Latest spectrum levels (0..1). Written by the audio thread, read by the UI. */
 object AudioLevels {
-    const val BANDS = 48
+    const val BANDS = 64
     @Volatile var bands: FloatArray = FloatArray(BANDS)
 }
 
@@ -25,7 +25,7 @@ object AudioLevels {
  * No RECORD_AUDIO permission needed.
  */
 class VisualizerAudioProcessor : BaseAudioProcessor() {
-    private val n = 1024
+    private val n = 2048
     private val window = FloatArray(n) { (0.5 - 0.5 * cos(2.0 * PI * it / (n - 1))).toFloat() }
     private val samples = FloatArray(n)
     private val re = FloatArray(n)
@@ -59,7 +59,12 @@ class VisualizerAudioProcessor : BaseAudioProcessor() {
             var sum = 0
             for (ch in 0 until channels) sum += buf.getShort().toInt()
             samples[filled++] = sum / (32768f * channels)
-            if (filled == n) { filled = 0; computeBands() }
+            if (filled == n) {
+                computeBands()
+                // 50% overlap: keep the newest half so updates stay ~43 per second
+                System.arraycopy(samples, n / 2, samples, 0, n / 2)
+                filled = n / 2
+            }
         }
     }
 

@@ -90,6 +90,17 @@ class MainActivity : ComponentActivity() {
     private class RowHolder(val root: LinearLayout, val icon: TextView, val title: TextView, val sub: TextView)
     private val allSongs = mutableListOf<Song>()
     private val spacers = mutableListOf<View>()
+    private val favorites = mutableSetOf<String>()
+    private val chipModes = listOf(0, 3, 1, 2)
+    private val iconSearch = 0
+    private val iconDots = 1
+    private val iconHeart = 2
+    private val iconSpeakerLow = 3
+    private val iconSpeakerHigh = 4
+    private lateinit var headerBar: LinearLayout
+    private lateinit var heart: IconView
+    private var cachedSongId: String? = null
+    private var cachedSong: Song? = null
     private val rows = mutableListOf<Row>()
     private var modeSongs: List<Song> = emptyList()
     private var filterMode = 0
@@ -115,6 +126,8 @@ class MainActivity : ComponentActivity() {
                 total.text = formatTime(duration)
             }
             if (!volumeDragging && ::volume.isInitialized) volume.progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val sub = subtitleText()
+            if (trackArtist.text.toString() != sub) trackArtist.text = sub
             handler.postDelayed(this, 500)
         }
     }
@@ -192,7 +205,9 @@ class MainActivity : ComponentActivity() {
                 if (shown[i] > 0.02f) alive = true
                 val h = height * (0.04f + 0.96f * shown[i])
                 p.color = if (i % 4 == 0) 0xff78edff.toInt() else accent
-                c.drawRoundRect(i * spacing + dp(1), height - h, (i + 1) * spacing - dp(1), height.toFloat(), dp(1f), dp(1f), p)
+                val bw = spacing * 0.5f
+                val bx = i * spacing + (spacing - bw) / 2f
+                c.drawRoundRect(bx, height - h, bx + bw, height.toFloat(), bw / 2f, bw / 2f, p)
             }
             if (playing || alive) postInvalidateOnAnimation()
         }
@@ -209,15 +224,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        favorites.addAll(getPreferences(MODE_PRIVATE).getStringSet("favorites", emptySet()) ?: emptySet())
         window.statusBarColor = background; window.navigationBarColor = background
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background) }
-        header = text("SONORA", 23f, 0xffe6edf3.toInt()).apply { typeface = Typeface.DEFAULT_BOLD; letterSpacing = 0.12f; setPadding(dp(18), 0, 0, 0); background = panel(10f) }
-        root.addView(header, LinearLayout.LayoutParams(-1, dp(52)))
+        header = text("SONORA", 23f, 0xffe6edf3.toInt()).apply { typeface = Typeface.DEFAULT_BOLD; letterSpacing = 0.12f; setPadding(dp(18), 0, 0, 0) }
+        headerBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = panel(10f); setPadding(0, 0, dp(6), 0) }
+        headerBar.addView(header, LinearLayout.LayoutParams(0, -1, 1f))
+        headerBar.addView(IconView(iconSearch).apply { setOnClickListener { openSearch() } }, LinearLayout.LayoutParams(dp(44), -1))
+        headerBar.addView(IconView(iconDots).apply { setOnClickListener { showSettings() } }, LinearLayout.LayoutParams(dp(40), -1))
+        root.addView(headerBar, LinearLayout.LayoutParams(-1, dp(52)))
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         player = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(player, LinearLayout.LayoutParams(-1, -1))
-        gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP }
+        gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; background = panel(8f); setPadding(dp(3), dp(3), dp(3), dp(3)) }
         gif = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
@@ -234,7 +254,11 @@ class MainActivity : ComponentActivity() {
         details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = darkPanel() }
         trackName = text("Выбери трек в библиотеке", 19f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD; setShadowLayer(dp(7f), 0f, 0f, 0x8800d1ff.toInt()) }
         trackArtist = text("SONORA · Now Playing", 13f, muted)
-        details.addView(trackName, LinearLayout.LayoutParams(-1, -2))
+        heart = IconView(iconHeart).apply { setOnClickListener { toggleFavorite() } }
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        titleRow.addView(trackName, LinearLayout.LayoutParams(0, -2, 1f))
+        titleRow.addView(heart, LinearLayout.LayoutParams(dp(40), dp(40)))
+        details.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
         details.addView(trackArtist, LinearLayout.LayoutParams(-1, dp(28)))
         spectrum = SpectrumView()
         details.addView(spectrum, LinearLayout.LayoutParams(-1, dp(55)).apply { topMargin = dp(7); bottomMargin = dp(8) })
@@ -254,10 +278,7 @@ class MainActivity : ComponentActivity() {
             val size = if (index == 2) dp(bigSize) else dp(smallSize)
             controls.addView(view, LinearLayout.LayoutParams(size, size).apply { marginStart = dp(3); marginEnd = dp(3) })
         }
-        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
-        details.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
         controlsRow = controls
-        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
         controls.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
             val row = v as LinearLayout
             val available = row.width - row.paddingLeft - row.paddingRight
@@ -284,8 +305,11 @@ class MainActivity : ComponentActivity() {
         times.addView(elapsed, LinearLayout.LayoutParams(0, dp(22), 1f))
         times.addView(total, LinearLayout.LayoutParams(0, dp(22), 1f))
         details.addView(times)
+        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
+        details.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
+        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
         volumeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        volumeRow.addView(text("−", 22f, muted).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(28), dp(38)))
+        volumeRow.addView(IconView(iconSpeakerLow), LinearLayout.LayoutParams(dp(34), dp(38)))
         volume = SeekBar(this).apply {
             max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -300,7 +324,7 @@ class MainActivity : ComponentActivity() {
             override fun onStopTrackingTouch(bar: SeekBar?) { volumeDragging = false }
         })
         volumeRow.addView(volume, LinearLayout.LayoutParams(0, dp(38), 1f))
-        volumeRow.addView(text("+", 22f, muted).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(28), dp(38)))
+        volumeRow.addView(IconView(iconSpeakerHigh), LinearLayout.LayoutParams(dp(34), dp(38)))
         details.addView(volumeRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         configurePlayerLayout()
         library = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
@@ -335,9 +359,10 @@ class MainActivity : ComponentActivity() {
         // Row 3: filter chips
         chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         chips = listOf(
-            button("Все", 14f) { setFilterMode(0) },
-            button("Папки", 14f) { setFilterMode(1) },
-            button("Недавние", 14f) { setFilterMode(2) }
+            button("Все", 13f) { setFilterMode(0) },
+            button("Избранное", 13f) { setFilterMode(3) },
+            button("Папки", 13f) { setFilterMode(1) },
+            button("Недавние", 13f) { setFilterMode(2) }
         )
         markChips()
         library.addView(chipsRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(4) })
@@ -436,7 +461,7 @@ class MainActivity : ComponentActivity() {
     private fun applyChrome() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         header.textSize = if (landscape) 19f else 23f
-        header.layoutParams = (header.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 40 else 52) }
+        headerBar.layoutParams = (headerBar.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 40 else 52) }
         nav.layoutParams = (nav.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 52 else 61) }
         for (t in listOf(playerTab, libraryTab, settingsTab)) {
             t.layoutParams = (t.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 42 else 52) }
@@ -504,6 +529,8 @@ class MainActivity : ComponentActivity() {
             mediaBox.layoutParams = (mediaBox.layoutParams as LinearLayout.LayoutParams).apply { height = dp(4) }
         }
         gifChoose.visibility = if (animationMode == 0) View.VISIBLE else View.GONE
+        gifArea.background = if (animationMode == -1) null else panel(8f)
+        gifArea.setPadding(dp(if (animationMode == -1) 0 else 3), dp(if (animationMode == -1) 0 else 3), dp(if (animationMode == -1) 0 else 3), dp(if (animationMode == -1) 0 else 3))
     }
     private fun updateModes() {
         controller?.let {
@@ -515,9 +542,10 @@ class MainActivity : ComponentActivity() {
     private fun refreshTrack() {
         val metadata = controller?.currentMediaItem?.mediaMetadata
         trackName.text = metadata?.title ?: "Выбери трек в библиотеке"
-        trackArtist.text = metadata?.artist ?: "SONORA · Now Playing"
+        trackArtist.text = subtitleText()
         playButton.text = if (controller?.isPlaying == true) "Ⅱ" else "▶"
         updateMini()
+        updateHeart()
         if (::libraryAdapter.isInitialized) libraryAdapter.notifyDataSetChanged()
     }
     private fun configurePlayerLayout() {
@@ -576,6 +604,89 @@ class MainActivity : ComponentActivity() {
                 (drawable as? Animatable)?.start()
             } else gif.setImageURI(uri)
         } catch (e: Exception) { trackArtist.text = "Ошибка GIF: ${e.message}" }
+    }
+    private fun currentSong(): Song? {
+        val id = controller?.currentMediaItem?.mediaId ?: return null
+        if (id != cachedSongId || (cachedSong == null && allSongs.isNotEmpty())) {
+            cachedSongId = id; cachedSong = allSongs.firstOrNull { it.id == id }
+        }
+        return cachedSong
+    }
+    // "SONORA · MP3 · 3:11"
+    private fun subtitleText(): String {
+        if (controller?.currentMediaItem == null) return "SONORA"
+        val song = currentSong()
+        val parts = mutableListOf("SONORA")
+        song?.format?.takeIf { it.isNotBlank() }?.let { parts.add(it) }
+        val duration = controller?.duration?.takeIf { it > 0 } ?: song?.durationMs?.takeIf { it > 0 }
+        if (duration != null) parts.add(formatTime(duration))
+        return parts.joinToString(" · ")
+    }
+    private fun updateHeart() {
+        if (!::heart.isInitialized) return
+        val id = controller?.currentMediaItem?.mediaId
+        heart.filled = id != null && id in favorites
+        heart.invalidate()
+    }
+    private fun toggleFavorite() {
+        val id = controller?.currentMediaItem?.mediaId ?: return
+        if (!favorites.remove(id)) favorites.add(id)
+        getPreferences(MODE_PRIVATE).edit().putStringSet("favorites", HashSet(favorites)).apply()
+        updateHeart()
+        if (filterMode == 3) applyFilter()
+    }
+    private fun openSearch() {
+        showLibrary(true)
+        search.requestFocus()
+        search.post { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(search, 0) }
+    }
+    // Small vector icons drawn in code (no image assets).
+    private inner class IconView(private val kind: Int) : View(this@MainActivity) {
+        var filled = false
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+        override fun onDraw(c: Canvas) {
+            super.onDraw(c)
+            val s = dp(22).toFloat() / 24f
+            val ox = (width - 24f * s) / 2f
+            val oy = (height - 24f * s) / 2f
+            fun gx(v: Float) = ox + v * s
+            fun gy(v: Float) = oy + v * s
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1.9f * s
+            p.color = 0xffdbe4ec.toInt()
+            when (kind) {
+                iconSearch -> {
+                    c.drawCircle(gx(10f), gy(10f), 6.5f * s, p)
+                    c.drawLine(gx(15f), gy(15f), gx(20.5f), gy(20.5f), p)
+                }
+                iconDots -> {
+                    p.style = Paint.Style.FILL
+                    for (cy in listOf(5f, 12f, 19f)) c.drawCircle(gx(12f), gy(cy), 2.1f * s, p)
+                }
+                iconHeart -> {
+                    val path = android.graphics.Path()
+                    path.moveTo(gx(12f), gy(20.5f))
+                    path.cubicTo(gx(5f), gy(15f), gx(2.5f), gy(11.5f), gx(2.5f), gy(8f))
+                    path.cubicTo(gx(2.5f), gy(5.5f), gx(4.5f), gy(3.5f), gx(7f), gy(3.5f))
+                    path.cubicTo(gx(9.2f), gy(3.5f), gx(11f), gy(4.8f), gx(12f), gy(6.5f))
+                    path.cubicTo(gx(13f), gy(4.8f), gx(14.8f), gy(3.5f), gx(17f), gy(3.5f))
+                    path.cubicTo(gx(19.5f), gy(3.5f), gx(21.5f), gy(5.5f), gx(21.5f), gy(8f))
+                    path.cubicTo(gx(21.5f), gy(11.5f), gx(19f), gy(15f), gx(12f), gy(20.5f))
+                    path.close()
+                    if (filled) { p.color = accent; p.style = Paint.Style.FILL_AND_STROKE }
+                    c.drawPath(path, p)
+                }
+                else -> {
+                    val path = android.graphics.Path()
+                    path.moveTo(gx(3f), gy(9f)); path.lineTo(gx(7f), gy(9f)); path.lineTo(gx(12f), gy(4.5f))
+                    path.lineTo(gx(12f), gy(19.5f)); path.lineTo(gx(7f), gy(15f)); path.lineTo(gx(3f), gy(15f)); path.close()
+                    p.color = 0xffb8c4cf.toInt()
+                    c.drawPath(path, p)
+                    c.drawArc(RectF(gx(8f), gy(8f), gx(16f), gy(16f)), -50f, 100f, false, p)
+                    if (kind == iconSpeakerHigh) c.drawArc(RectF(gx(4f), gy(4f), gx(20f), gy(20f)), -50f, 100f, false, p)
+                }
+            }
+        }
     }
     // Flexible gap inside the player panel: shares leftover height in portrait, hidden in landscape.
     private fun spacer(): View = View(this).also { spacers.add(it) }
@@ -650,7 +761,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun markChips() {
         chips.forEachIndexed { i, c ->
-            val on = i == filterMode
+            val on = chipModes[i] == filterMode
             c.background = if (on) activePanel(19f) else panel(19f)
             c.setTextColor(if (on) accent else Color.WHITE)
         }
@@ -692,6 +803,10 @@ class MainActivity : ComponentActivity() {
             }
             2 -> {
                 modeSongs = allSongs.sortedByDescending { it.added }.take(50)
+                modeSongs.filter { matches(it) }.forEach { rows.add(Row(it, null, 0)) }
+            }
+            3 -> {
+                modeSongs = allSongs.filter { it.id in favorites }
                 modeSongs.filter { matches(it) }.forEach { rows.add(Row(it, null, 0)) }
             }
             else -> {
