@@ -99,6 +99,22 @@ class MainActivity : ComponentActivity() {
     private val iconHeart = 2
     private val iconSpeakerLow = 3
     private val iconSpeakerHigh = 4
+    private val iconEq = 5
+    private lateinit var eqScreen: ScrollView
+    private lateinit var eqView: EqView
+    private lateinit var eqOnButton: TextView
+    private lateinit var eqBassLabel: TextView
+    private lateinit var eqBassSeek: SeekBar
+    private lateinit var eqPresetButtons: List<TextView>
+    private val eqPresetNames = listOf("Плоский", "Бас", "Вокал", "Рок", "Поп", "Высокие")
+    private val eqPresets = listOf(
+        floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+        floatArrayOf(6f, 5f, 4f, 2f, 1f, 0f, 0f, 0f, 0f, 0f),
+        floatArrayOf(-2f, -1f, 0f, 1f, 3f, 4f, 4f, 3f, 1f, 0f),
+        floatArrayOf(4f, 3f, 2f, 0f, -1f, 0f, 2f, 3f, 4f, 4f),
+        floatArrayOf(-1f, 0f, 2f, 3f, 3f, 2f, 0f, -1f, -1f, -2f),
+        floatArrayOf(0f, 0f, 0f, 0f, 0f, 1f, 2f, 4f, 5f, 6f)
+    )
     private lateinit var headerBar: LinearLayout
     private lateinit var heart: IconView
     private val rows = mutableListOf<Row>()
@@ -226,6 +242,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        SoftEq.load(this)
         favorites.addAll(getPreferences(MODE_PRIVATE).getStringSet("favorites", emptySet()) ?: emptySet())
         window.statusBarColor = background; window.navigationBarColor = background
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background) }
@@ -233,6 +250,7 @@ class MainActivity : ComponentActivity() {
         headerBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = panel(10f); setPadding(0, 0, dp(6), 0) }
         headerBar.addView(header, LinearLayout.LayoutParams(0, -1, 1f))
         headerBar.addView(IconView(iconSearch).apply { setOnClickListener { openSearch() } }, LinearLayout.LayoutParams(dp(44), -1))
+        headerBar.addView(IconView(iconEq).apply { setOnClickListener { showEqualizer() } }, LinearLayout.LayoutParams(dp(44), -1))
         headerBar.addView(IconView(iconDots).apply { setOnClickListener { showSettings() } }, LinearLayout.LayoutParams(dp(40), -1))
         root.addView(headerBar, LinearLayout.LayoutParams(-1, dp(52)))
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -438,7 +456,47 @@ class MainActivity : ComponentActivity() {
             configurePlayerLayout()
         }
         settingsItems.addView(carToggle, LinearLayout.LayoutParams(-1, dp(52)))
+        // ---- Equalizer screen ----
+        eqScreen = ScrollView(this).apply { visibility = View.GONE; overScrollMode = View.OVER_SCROLL_NEVER }
+        val eqItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(6), dp(2), dp(12)) }
+        eqScreen.addView(eqItems)
+        val eqHead = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        eqHead.addView(sectionTitle("ЭКВАЛАЙЗЕР"), LinearLayout.LayoutParams(0, dp(40), 1f))
+        eqOnButton = button("", 14f) {
+            setEq(enabled = !SoftEq.params.enabled)
+            SoftEq.save(this)
+            updateEqUi()
+        }
+        eqHead.addView(eqOnButton, LinearLayout.LayoutParams(dp(110), dp(40)))
+        eqItems.addView(eqHead, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
+        eqPresetButtons = eqPresetNames.mapIndexed { i, name -> button(name, 13f) { applyPreset(i) } }
+        for (r in 0..1) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (j in 0..2) row.addView(eqPresetButtons[r * 3 + j], LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            eqItems.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
+        }
+        eqView = EqView()
+        eqView.onChange = { setEq(gains = eqView.gains) }
+        eqView.onCommit = { SoftEq.save(this); updateEqUi() }
+        eqItems.addView(eqView, LinearLayout.LayoutParams(-1, dp(250)).apply { topMargin = dp(4) })
+        eqBassLabel = text("", 14f, Color.WHITE).apply { setPadding(dp(6), 0, 0, 0) }
+        eqItems.addView(eqBassLabel, LinearLayout.LayoutParams(-1, dp(32)))
+        eqBassSeek = SeekBar(this).apply {
+            max = 12
+            progressTintList = android.content.res.ColorStateList.valueOf(accent)
+            thumbTintList = android.content.res.ColorStateList.valueOf(accent)
+        }
+        eqBassSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) { setEq(bass = progress.toFloat()); eqBassLabel.text = "Бас  +$progress дБ" }
+            }
+            override fun onStartTrackingTouch(bar: SeekBar?) {}
+            override fun onStopTrackingTouch(bar: SeekBar?) { SoftEq.save(this@MainActivity); updateEqUi() }
+        })
+        eqItems.addView(eqBassSeek, LinearLayout.LayoutParams(-1, dp(40)))
+        updateEqUi()
         content.addView(settings, LinearLayout.LayoutParams(-1, -1))
+        content.addView(eqScreen, LinearLayout.LayoutParams(-1, -1))
         nav = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL; background = panel(); setPadding(dp(4), dp(3), dp(4), dp(3)) }
         playerTab = button("Плеер", 15f) { showLibrary(false) }
         libraryTab = button("Библиотека", 15f) { showLibrary(true) }
@@ -478,7 +536,7 @@ class MainActivity : ComponentActivity() {
         handler.post { startupScan() }
         handler.post(ticker)
     }
-    private fun markTabs(active: TextView) {
+    private fun markTabs(active: TextView?) {
         for (t in listOf(playerTab, libraryTab, settingsTab)) {
             val on = t === active
             t.background = if (on) activePanel() else panel()
@@ -495,11 +553,13 @@ class MainActivity : ComponentActivity() {
         for (t in listOf(playerTab, libraryTab, settingsTab)) {
             t.layoutParams = (t.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 42 else 52) }
         }
+        eqView.layoutParams = (eqView.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 170 else 250) }
         layoutLibrary()
         updateMini()
     }
     private fun showLibrary(show: Boolean) {
         settings.visibility = View.GONE
+        eqScreen.visibility = View.GONE
         library.visibility = if (show) View.VISIBLE else View.GONE
         player.visibility = if (show) View.GONE else View.VISIBLE
         if (show) video.pause() else if (animationMode > 0) video.start()
@@ -521,10 +581,46 @@ class MainActivity : ComponentActivity() {
         carToggle.background = if (carMode) activePanel() else panel()
         carToggle.setTextColor(if (carMode) accent else Color.WHITE)
     }
+    // Any user change turns the equalizer on automatically.
+    private fun setEq(gains: FloatArray = SoftEq.params.gains, bass: Float = SoftEq.params.bassDb, enabled: Boolean = true) {
+        SoftEq.params = SoftEq.Params(enabled, gains.copyOf(), bass)
+    }
+    private fun applyPreset(i: Int) {
+        setEq(gains = eqPresets[i])
+        SoftEq.save(this)
+        updateEqUi()
+    }
+    private fun updateEqUi() {
+        if (!::eqView.isInitialized) return
+        val p = SoftEq.params
+        System.arraycopy(p.gains, 0, eqView.gains, 0, SoftEq.BANDS)
+        eqView.invalidate()
+        eqView.alpha = if (p.enabled) 1f else 0.45f
+        eqOnButton.text = if (p.enabled) "ВКЛ" else "ВЫКЛ"
+        eqOnButton.background = if (p.enabled) activePanel() else panel()
+        eqOnButton.setTextColor(if (p.enabled) accent else Color.WHITE)
+        eqBassSeek.progress = p.bassDb.toInt()
+        eqBassLabel.text = "Бас  +${p.bassDb.toInt()} дБ"
+        eqPresetButtons.forEachIndexed { i, b ->
+            val on = p.enabled && eqPresets[i].contentEquals(p.gains)
+            b.background = if (on) activePanel() else panel()
+            b.setTextColor(if (on) accent else Color.WHITE)
+        }
+    }
+    private fun showEqualizer() {
+        player.visibility = View.GONE
+        library.visibility = View.GONE
+        settings.visibility = View.GONE
+        eqScreen.visibility = View.VISIBLE
+        video.pause()
+        updateEqUi()
+        markTabs(null)
+    }
     private fun showSettings() {
         player.visibility = View.GONE
         library.visibility = View.GONE
         settings.visibility = View.VISIBLE
+        eqScreen.visibility = View.GONE
         video.pause()
         playerTab.setTextColor(Color.WHITE)
         libraryTab.setTextColor(Color.WHITE)
@@ -667,6 +763,80 @@ class MainActivity : ComponentActivity() {
         search.requestFocus()
         search.post { (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(search, 0) }
     }
+    // 10 vertical band sliders (-12..+12 dB), drawn and touched in code.
+    private inner class EqView : View(this@MainActivity) {
+        val gains = FloatArray(SoftEq.BANDS)
+        var onChange: (() -> Unit)? = null
+        var onCommit: (() -> Unit)? = null
+        private var active = -1
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val labels = arrayOf("31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
+        private fun yTop() = dp(28).toFloat()
+        private fun yBottom() = height - dp(26).toFloat()
+        override fun onDraw(c: Canvas) {
+            super.onDraw(c)
+            val n = SoftEq.BANDS
+            val colW = width.toFloat() / n
+            val top = yTop()
+            val bottom = yBottom()
+            val mid = (top + bottom) / 2f
+            p.strokeCap = Paint.Cap.ROUND
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = dp(1).toFloat()
+            p.color = 0x668795a3
+            c.drawLine(0f, mid, width.toFloat(), mid, p)
+            p.textAlign = Paint.Align.CENTER
+            p.textSize = dp(11).toFloat()
+            for (i in 0 until n) {
+                val cx = colW * (i + 0.5f)
+                val g = gains[i]
+                val yg = mid - (g / 12f) * (mid - top)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = dp(4).toFloat()
+                p.color = 0xff2a333c.toInt()
+                c.drawLine(cx, top, cx, bottom, p)
+                p.color = accent
+                c.drawLine(cx, mid, cx, yg, p)
+                p.style = Paint.Style.FILL
+                p.color = 0xff1b232b.toInt()
+                c.drawCircle(cx, yg, dp(11).toFloat(), p)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = dp(2).toFloat()
+                p.color = if (i == active) accent else steel
+                c.drawCircle(cx, yg, dp(11).toFloat(), p)
+                p.style = Paint.Style.FILL
+                p.color = if (g != 0f) accent else muted
+                c.drawText((if (g > 0f) "+" else "") + g.toInt(), cx, dp(16).toFloat(), p)
+                p.color = muted
+                c.drawText(labels[i], cx, height - dp(8).toFloat(), p)
+            }
+        }
+        private fun setFromY(y: Float) {
+            if (active < 0) return
+            val top = yTop()
+            val mid = (top + yBottom()) / 2f
+            val g = (((mid - y) / (mid - top)) * 12f).coerceIn(-12f, 12f)
+            gains[active] = Math.round(g).toFloat()
+            invalidate()
+            onChange?.invoke()
+        }
+        override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    active = (e.x / (width.toFloat() / SoftEq.BANDS)).toInt().coerceIn(0, SoftEq.BANDS - 1)
+                    setFromY(e.y)
+                }
+                android.view.MotionEvent.ACTION_MOVE -> setFromY(e.y)
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    active = -1
+                    invalidate()
+                    onCommit?.invoke()
+                }
+            }
+            return true
+        }
+    }
     // Small vector icons drawn in code (no image assets).
     private inner class IconView(private val kind: Int) : View(this@MainActivity) {
         var filled = false
@@ -685,6 +855,13 @@ class MainActivity : ComponentActivity() {
                 iconSearch -> {
                     c.drawCircle(gx(10f), gy(10f), 6.5f * s, p)
                     c.drawLine(gx(15f), gy(15f), gx(20.5f), gy(20.5f), p)
+                }
+                iconEq -> {
+                    for (lx in listOf(5f, 12f, 19f)) c.drawLine(gx(lx), gy(4f), gx(lx), gy(20f), p)
+                    p.style = Paint.Style.FILL
+                    c.drawCircle(gx(5f), gy(15f), 2.4f * s, p)
+                    c.drawCircle(gx(12f), gy(9f), 2.4f * s, p)
+                    c.drawCircle(gx(19f), gy(13f), 2.4f * s, p)
                 }
                 iconDots -> {
                     p.style = Paint.Style.FILL

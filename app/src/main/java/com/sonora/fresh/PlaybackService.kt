@@ -15,6 +15,7 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     override fun onCreate() {
         super.onCreate()
+        SoftEq.load(this)
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -23,7 +24,7 @@ class PlaybackService : MediaSessionService() {
             ): AudioSink? = DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(enableFloatOutput)
                 .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .setAudioProcessors(arrayOf<AudioProcessor>(VisualizerAudioProcessor()))
+                .setAudioProcessors(arrayOf<AudioProcessor>(EqAudioProcessor(), VisualizerAudioProcessor()))
                 .build()
         }
         val player = ExoPlayer.Builder(this, renderersFactory).build().apply {
