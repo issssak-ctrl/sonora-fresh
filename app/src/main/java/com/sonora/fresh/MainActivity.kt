@@ -4,6 +4,11 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Canvas
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
+import android.graphics.Matrix
+import android.graphics.RadialGradient
+import android.graphics.SweepGradient
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.LinearGradient
@@ -179,39 +184,190 @@ class MainActivity : ComponentActivity() {
     }
     // Brushed-metal look built from gradients (no bitmap assets).
     private val metalColors = intArrayOf(0xff3b444e.toInt(), 0xff171d24.toInt(), 0xff252d36.toInt(), 0xff0e1318.toInt())
-    private fun panel(radius: Float = 12f, stroke: Int = steel): Drawable =
-        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, metalColors).apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(radius)
-            setStroke(dp(1.5f).toInt(), stroke)
-        }
-    private fun darkPanel(radius: Float = 14f, stroke: Int = steel): Drawable =
-        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xff121a22.toInt(), 0xff070b10.toInt())).apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(radius)
-            setStroke(dp(1.5f).toInt(), stroke)
-        }
-    private fun activePanel(radius: Float = 12f): Drawable = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(radius)
-        setColor(0xff06141f.toInt())
-        setStroke(dp(2f).toInt(), accent)
-    }
+    private fun panel(radius: Float = 12f, stroke: Int = steel): Drawable = MetalDrawable(radius, false, stroke)
+    private fun darkPanel(radius: Float = 14f, stroke: Int = steel): Drawable = MetalDrawable(radius, true, stroke)
+    private fun activePanel(radius: Float = 12f): Drawable = ActiveDrawable(radius)
     private fun circle(ring: Int = steel, ringWidth: Float = 2f): Drawable =
-        GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, metalColors).apply {
-            shape = GradientDrawable.OVAL
-            setStroke(dp(ringWidth).toInt(), ring)
+        if (ring == accent) ChromeDrawable(true, maxOf(ringWidth, 2.5f) + 0.5f, false) else ChromeDrawable(false, 2.6f, false)
+
+    // ---------- brushed metal / chrome, drawn in code (no image assets) ----------
+    private val brushed: Bitmap by lazy {
+        val w = 256
+        val h = 256
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(bmp)
+        val rnd = java.util.Random(7)
+        val paint = Paint()
+        for (y in 0 until h) { // fine horizontal brush lines
+            paint.color = if (rnd.nextBoolean()) Color.argb(rnd.nextInt(30), 255, 255, 255) else Color.argb(rnd.nextInt(30), 0, 0, 0)
+            cv.drawRect(0f, y.toFloat(), w.toFloat(), y + 1f, paint)
         }
+        repeat(320) { // short scratches
+            val y = rnd.nextInt(h).toFloat()
+            val x = rnd.nextInt(w).toFloat()
+            val len = 8f + rnd.nextInt(70)
+            paint.color = if (rnd.nextBoolean()) Color.argb(8 + rnd.nextInt(26), 255, 255, 255) else Color.argb(8 + rnd.nextInt(26), 0, 0, 0)
+            cv.drawRect(x, y, minOf(x + len, w.toFloat()), y + 1f, paint)
+        }
+        bmp
+    }
+
+    // Panel: steel gradient + brushed texture + top bevel + chrome edge.
+    private inner class MetalDrawable(private val radiusDp: Float, private val dark: Boolean, private val strokeColor: Int) : Drawable() {
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val tex = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val bevel = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val rect = RectF()
+        private val inner = RectF()
+        private var radius = 0f
+        override fun onBoundsChange(b: android.graphics.Rect) {
+            val sw = dp(1.5f)
+            rect.set(b.left + sw / 2f, b.top + sw / 2f, b.right - sw / 2f, b.bottom - sw / 2f)
+            radius = minOf(dp(radiusDp), rect.height() / 2f, rect.width() / 2f)
+            val g = dp(1.5f)
+            inner.set(rect.left + g, rect.top + g, rect.right - g, rect.bottom - g)
+            val top = b.top.toFloat()
+            val bot = b.bottom.toFloat()
+            fill.shader = LinearGradient(0f, top, 0f, bot,
+                if (dark) intArrayOf(0xFF141C24.toInt(), 0xFF0A0F14.toInt(), 0xFF05080C.toInt())
+                else intArrayOf(0xFF47515C.toInt(), 0xFF1D242B.toInt(), 0xFF2B343D.toInt(), 0xFF0F151A.toInt()),
+                null, Shader.TileMode.CLAMP)
+            tex.shader = BitmapShader(brushed, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+            tex.alpha = if (dark) 110 else 255
+            bevel.strokeWidth = dp(1f)
+            bevel.shader = LinearGradient(0f, top, 0f, bot, 0x66FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+            edge.strokeWidth = sw
+            if (strokeColor == steel) {
+                edge.shader = LinearGradient(b.left.toFloat(), top, b.right.toFloat(), bot,
+                    intArrayOf(0xFFC3CCD5.toInt(), 0xFF58636E.toInt(), 0xFFA5B0BB.toInt(), 0xFF46505A.toInt()), null, Shader.TileMode.CLAMP)
+            } else {
+                edge.shader = null
+                edge.color = strokeColor
+            }
+        }
+        override fun draw(c: Canvas) {
+            if (rect.width() <= 0f) return
+            c.drawRoundRect(rect, radius, radius, fill)
+            c.drawRoundRect(rect, radius, radius, tex)
+            val ir = maxOf(0f, radius - dp(1.5f))
+            c.drawRoundRect(inner, ir, ir, bevel)
+            c.drawRoundRect(rect, radius, radius, edge)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        @Suppress("DEPRECATION")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    // Selected item: dark face, soft cyan inner glow and a crisp cyan edge.
+    private inner class ActiveDrawable(private val radiusDp: Float) : Drawable() {
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val rect = RectF()
+        private var radius = 0f
+        override fun onBoundsChange(b: android.graphics.Rect) {
+            val sw = dp(2f)
+            rect.set(b.left + sw / 2f, b.top + sw / 2f, b.right - sw / 2f, b.bottom - sw / 2f)
+            radius = minOf(dp(radiusDp), rect.height() / 2f, rect.width() / 2f)
+            fill.shader = LinearGradient(0f, b.top.toFloat(), 0f, b.bottom.toFloat(), 0xFF0B1E2C.toInt(), 0xFF040C13.toInt(), Shader.TileMode.CLAMP)
+            edge.strokeWidth = sw
+            edge.color = accent
+        }
+        override fun draw(c: Canvas) {
+            if (rect.width() <= 0f) return
+            c.drawRoundRect(rect, radius, radius, fill)
+            val steps = listOf(dp(9f) to 0x14, dp(6f) to 0x22, dp(3.5f) to 0x3C)
+            for ((w, a) in steps) {
+                glow.strokeWidth = w
+                glow.color = Color.argb(a, 0, 209, 255)
+                c.drawRoundRect(rect, radius, radius, glow)
+            }
+            c.drawRoundRect(rect, radius, radius, edge)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        @Suppress("DEPRECATION")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    // Round button / knob: chrome (or glowing cyan) ring around a brushed face with a top highlight.
+    private inner class ChromeDrawable(private val accentRing: Boolean, private val ringDp: Float, private val silver: Boolean, private val sizeDp: Int = -1) : Drawable() {
+        private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val face = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val brush = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val spec = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        private val arc = RectF()
+        private var cx = 0f
+        private var cy = 0f
+        private var ringR = 0f
+        private var faceR = 0f
+        override fun getIntrinsicWidth() = if (sizeDp > 0) dp(sizeDp) else -1
+        override fun getIntrinsicHeight() = if (sizeDp > 0) dp(sizeDp) else -1
+        override fun onBoundsChange(b: android.graphics.Rect) {
+            cx = b.exactCenterX(); cy = b.exactCenterY()
+            val r = minOf(b.width(), b.height()) / 2f - dp(1f)
+            val glowSpan = if (accentRing) dp(5f) else 0f
+            val ringW = dp(ringDp)
+            ringR = r - glowSpan - ringW / 2f
+            faceR = ringR - ringW / 2f
+            ring.strokeWidth = ringW
+            val colors = if (accentRing)
+                intArrayOf(0xFF8CF3FF.toInt(), 0xFF00A9DC.toInt(), 0xFFA8F7FF.toInt(), 0xFF0086B5.toInt(), 0xFF8CF3FF.toInt())
+            else
+                intArrayOf(0xFFF1F5F9.toInt(), 0xFF65717D.toInt(), 0xFFFFFFFF.toInt(), 0xFF414C57.toInt(), 0xFFE2E9F0.toInt(), 0xFF707C88.toInt(), 0xFFF1F5F9.toInt())
+            val sweep = SweepGradient(cx, cy, colors, null)
+            val m = Matrix()
+            m.postRotate(-35f, cx, cy)
+            sweep.setLocalMatrix(m)
+            ring.shader = sweep
+            face.shader = RadialGradient(cx - faceR * 0.25f, cy - faceR * 0.45f, faceR * 1.5f,
+                if (silver) 0xFFF4F7FA.toInt() else 0xFF3D4954.toInt(),
+                if (silver) 0xFF7F8B97.toInt() else 0xFF0E1419.toInt(), Shader.TileMode.CLAMP)
+            brush.shader = SweepGradient(cx, cy, intArrayOf(
+                0x30FFFFFF, 0x00FFFFFF, 0x30FFFFFF, 0x00FFFFFF, 0x30FFFFFF, 0x00FFFFFF, 0x30FFFFFF, 0x00FFFFFF, 0x30FFFFFF), null)
+            arc.set(cx - faceR + dp(2f), cy - faceR + dp(2f), cx + faceR - dp(2f), cy + faceR - dp(2f))
+            spec.strokeWidth = dp(1f)
+            spec.color = if (silver) Color.argb(200, 255, 255, 255) else Color.argb(110, 255, 255, 255)
+        }
+        override fun draw(c: Canvas) {
+            if (faceR <= 0f) return
+            if (accentRing) {
+                val steps = listOf(0x12, 0x22, 0x3A)
+                for ((i, a) in steps.withIndex()) {
+                    glow.strokeWidth = dp(ringDp) + (3 - i) * dp(2.2f)
+                    glow.color = Color.argb(a, 0, 209, 255)
+                    c.drawCircle(cx, cy, ringR, glow)
+                }
+            }
+            c.drawCircle(cx, cy, ringR, ring)
+            c.drawCircle(cx, cy, faceR, face)
+            if (!silver) c.drawCircle(cx, cy, faceR, brush)
+            c.drawArc(arc, 215f, 110f, false, spec)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        @Suppress("DEPRECATION")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
     private fun chrome(round: Boolean = false): Drawable = if (round) circle() else panel()
     private inner class SpectrumView : View(this@MainActivity) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val shown = FloatArray(AudioLevels.BANDS)
+        private var barShader: Shader? = null
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            barShader = LinearGradient(0f, 0f, 0f, h.toFloat(), intArrayOf(0xFF9BF5FF.toInt(), 0xFF00C8FF.toInt(), 0xFF0088BC.toInt()), null, Shader.TileMode.CLAMP)
+        }
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             setMeasuredDimension(getDefaultSize(suggestedMinimumWidth, widthMeasureSpec),
                 if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.EXACTLY) View.MeasureSpec.getSize(heightMeasureSpec) else suggestedMinimumHeight)
         }
         override fun onDraw(c: Canvas) {
             super.onDraw(c)
+            p.shader = barShader
             val bars = AudioLevels.BANDS
             val spacing = width.toFloat() / bars
             val playing = controller?.isPlaying == true
@@ -222,9 +378,11 @@ class MainActivity : ComponentActivity() {
                 shown[i] = if (target >= shown[i]) target else shown[i] * 0.88f
                 if (shown[i] > 0.02f) alive = true
                 val h = height * (0.04f + 0.96f * shown[i])
-                p.color = if (i % 4 == 0) 0xff78edff.toInt() else accent
                 val bw = spacing * 0.5f
                 val bx = i * spacing + (spacing - bw) / 2f
+                p.alpha = 38
+                c.drawRoundRect(bx - bw * 0.7f, height - h, bx + bw * 1.7f, height.toFloat(), bw, bw, p)
+                p.alpha = if (i % 4 == 0) 255 else 220
                 c.drawRoundRect(bx, height - h, bx + bw, height.toFloat(), bw / 2f, bw / 2f, p)
             }
             if (playing || alive) postInvalidateOnAnimation()
@@ -247,6 +405,13 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = background; window.navigationBarColor = background
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background) }
         header = text("SONORA", 23f, 0xffe6edf3.toInt()).apply { typeface = Typeface.DEFAULT_BOLD; letterSpacing = 0.12f; setPadding(dp(18), 0, 0, 0) }
+        header.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            val mid = (bottom - top) / 2f
+            val half = header.textSize * 0.55f
+            header.paint.shader = LinearGradient(0f, mid - half, 0f, mid + half,
+                intArrayOf(0xFFFFFFFF.toInt(), 0xFFC7D1DB.toInt(), 0xFF8794A1.toInt()), null, Shader.TileMode.CLAMP)
+            header.invalidate()
+        }
         headerBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = panel(10f); setPadding(0, 0, dp(6), 0) }
         headerBar.addView(header, LinearLayout.LayoutParams(0, -1, 1f))
         headerBar.addView(IconView(iconSearch).apply { setOnClickListener { openSearch() } }, LinearLayout.LayoutParams(dp(44), -1))
@@ -325,7 +490,7 @@ class MainActivity : ComponentActivity() {
                 if (lp.width != size || lp.height != size) { lp.width = size; lp.height = size; child.layoutParams = lp }
             }
         }
-        seek = SeekBar(this).apply { max = 1000; progressTintList = android.content.res.ColorStateList.valueOf(accent); thumbTintList = android.content.res.ColorStateList.valueOf(accent) }
+        seek = SeekBar(this).apply { max = 1000; progressTintList = android.content.res.ColorStateList.valueOf(accent); thumb = ChromeDrawable(false, 3f, true, 24) }
         details.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) controller?.let { if (it.duration > 0) it.seekTo(it.duration * progress / 1000) } }
@@ -347,7 +512,7 @@ class MainActivity : ComponentActivity() {
             max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
             progressTintList = android.content.res.ColorStateList.valueOf(accent)
-            thumbTintList = android.content.res.ColorStateList.valueOf(accent)
+            thumb = ChromeDrawable(false, 3f, true, 24)
         }
         volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -484,7 +649,7 @@ class MainActivity : ComponentActivity() {
         eqBassSeek = SeekBar(this).apply {
             max = 12
             progressTintList = android.content.res.ColorStateList.valueOf(accent)
-            thumbTintList = android.content.res.ColorStateList.valueOf(accent)
+            thumb = ChromeDrawable(false, 3f, true, 24)
         }
         eqBassSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -771,6 +936,7 @@ class MainActivity : ComponentActivity() {
         private var active = -1
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val labels = arrayOf("31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
+        private val knob = ChromeDrawable(false, 2.6f, true, 24).also { it.setBounds(0, 0, dp(24), dp(24)) }
         private fun yTop() = dp(28).toFloat()
         private fun yBottom() = height - dp(26).toFloat()
         override fun onDraw(c: Canvas) {
@@ -797,13 +963,17 @@ class MainActivity : ComponentActivity() {
                 c.drawLine(cx, top, cx, bottom, p)
                 p.color = accent
                 c.drawLine(cx, mid, cx, yg, p)
+                c.save()
+                c.translate(cx - dp(12), yg - dp(12))
+                knob.draw(c)
+                c.restore()
+                if (i == active) {
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = dp(2).toFloat()
+                    p.color = accent
+                    c.drawCircle(cx, yg, dp(14).toFloat(), p)
+                }
                 p.style = Paint.Style.FILL
-                p.color = 0xff1b232b.toInt()
-                c.drawCircle(cx, yg, dp(11).toFloat(), p)
-                p.style = Paint.Style.STROKE
-                p.strokeWidth = dp(2).toFloat()
-                p.color = if (i == active) accent else steel
-                c.drawCircle(cx, yg, dp(11).toFloat(), p)
                 p.style = Paint.Style.FILL
                 p.color = if (g != 0f) accent else muted
                 c.drawText((if (g > 0f) "+" else "") + g.toInt(), cx, dp(16).toFloat(), p)
