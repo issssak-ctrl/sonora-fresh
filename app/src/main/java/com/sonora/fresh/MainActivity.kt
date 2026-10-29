@@ -188,7 +188,7 @@ class MainActivity : ComponentActivity() {
     private fun darkPanel(radius: Float = 14f, stroke: Int = steel): Drawable = MetalDrawable(radius, true, stroke)
     private fun activePanel(radius: Float = 12f): Drawable = ActiveDrawable(radius)
     private fun circle(ring: Int = steel, ringWidth: Float = 2f): Drawable =
-        if (ring == accent) ChromeDrawable(true, maxOf(ringWidth, 2.5f) + 0.5f, false) else ChromeDrawable(false, 2.6f, false)
+        if (ring == accent) ChromeDrawable(true, maxOf(ringWidth, 2.5f) + 1f, false) else ChromeDrawable(false, 3.4f, false)
 
     // ---------- brushed metal / chrome, drawn in code (no image assets) ----------
     private val brushed: Bitmap by lazy {
@@ -212,6 +212,24 @@ class MainActivity : ComponentActivity() {
         bmp
     }
 
+    // Slider track: dark groove + cyan progress with a soft glow (like the mockup).
+    private fun sliderTrack(): Drawable {
+        val bg = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(2f); setColor(0xFF27313A.toInt()) }
+        val core = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xFF0090C8.toInt(), 0xFF2BE0FF.toInt()))
+            .apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(2f) }
+        val halo = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(5f); setColor(0x3300D1FF) }
+        val progress = android.graphics.drawable.LayerDrawable(arrayOf(halo, core)).apply {
+            setLayerHeight(0, dp(10)); setLayerGravity(0, Gravity.CENTER_VERTICAL)
+            setLayerHeight(1, dp(4)); setLayerGravity(1, Gravity.CENTER_VERTICAL)
+        }
+        val clip = android.graphics.drawable.ClipDrawable(progress, Gravity.START, android.graphics.drawable.ClipDrawable.HORIZONTAL)
+        return android.graphics.drawable.LayerDrawable(arrayOf(bg, clip)).apply {
+            setId(0, android.R.id.background)
+            setId(1, android.R.id.progress)
+            setLayerHeight(0, dp(4)); setLayerGravity(0, Gravity.CENTER_VERTICAL)
+            setLayerHeight(1, dp(10)); setLayerGravity(1, Gravity.CENTER_VERTICAL)
+        }
+    }
     // Panel: steel gradient + brushed texture + top bevel + chrome edge.
     private inner class MetalDrawable(private val radiusDp: Float, private val dark: Boolean, private val strokeColor: Int) : Drawable() {
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -230,17 +248,17 @@ class MainActivity : ComponentActivity() {
             val top = b.top.toFloat()
             val bot = b.bottom.toFloat()
             fill.shader = LinearGradient(0f, top, 0f, bot,
-                if (dark) intArrayOf(0xFF141C24.toInt(), 0xFF0A0F14.toInt(), 0xFF05080C.toInt())
-                else intArrayOf(0xFF47515C.toInt(), 0xFF1D242B.toInt(), 0xFF2B343D.toInt(), 0xFF0F151A.toInt()),
+                if (dark) intArrayOf(0xFF1A242E.toInt(), 0xFF0D141B.toInt(), 0xFF070B10.toInt())
+                else intArrayOf(0xFF66717D.toInt(), 0xFF2C353E.toInt(), 0xFF424D58.toInt(), 0xFF1A2128.toInt()),
                 null, Shader.TileMode.CLAMP)
             tex.shader = BitmapShader(brushed, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
-            tex.alpha = if (dark) 110 else 255
+            tex.alpha = if (dark) 100 else 170
             bevel.strokeWidth = dp(1f)
-            bevel.shader = LinearGradient(0f, top, 0f, bot, 0x66FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+            bevel.shader = LinearGradient(0f, top, 0f, bot, 0x7AFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
             edge.strokeWidth = sw
             if (strokeColor == steel) {
                 edge.shader = LinearGradient(b.left.toFloat(), top, b.right.toFloat(), bot,
-                    intArrayOf(0xFFC3CCD5.toInt(), 0xFF58636E.toInt(), 0xFFA5B0BB.toInt(), 0xFF46505A.toInt()), null, Shader.TileMode.CLAMP)
+                    intArrayOf(0xFFE0E7EE.toInt(), 0xFF6A7682.toInt(), 0xFFC2CCD6.toInt(), 0xFF535E69.toInt()), null, Shader.TileMode.CLAMP)
             } else {
                 edge.shader = null
                 edge.color = strokeColor
@@ -490,7 +508,7 @@ class MainActivity : ComponentActivity() {
                 if (lp.width != size || lp.height != size) { lp.width = size; lp.height = size; child.layoutParams = lp }
             }
         }
-        seek = SeekBar(this).apply { max = 1000; progressTintList = android.content.res.ColorStateList.valueOf(accent); thumb = ChromeDrawable(false, 3f, true, 24) }
+        seek = SeekBar(this).apply { max = 1000; progressDrawable = sliderTrack(); thumb = ChromeDrawable(false, 3f, true, 24) }
         details.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) controller?.let { if (it.duration > 0) it.seekTo(it.duration * progress / 1000) } }
@@ -511,7 +529,7 @@ class MainActivity : ComponentActivity() {
         volume = SeekBar(this).apply {
             max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
             progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
-            progressTintList = android.content.res.ColorStateList.valueOf(accent)
+            progressDrawable = sliderTrack()
             thumb = ChromeDrawable(false, 3f, true, 24)
         }
         volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -618,9 +636,10 @@ class MainActivity : ComponentActivity() {
             carMode = !carMode
             getPreferences(MODE_PRIVATE).edit().putBoolean("car_mode", carMode).apply()
             updateCarToggle()
-            configurePlayerLayout()
+            applyCarMode()
         }
         settingsItems.addView(carToggle, LinearLayout.LayoutParams(-1, dp(52)))
+        settingsItems.addView(text("Крупные кнопки и вкладки, экран не гаснет", 12f, muted).apply { setPadding(dp(6), dp(4), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
         // ---- Equalizer screen ----
         eqScreen = ScrollView(this).apply { visibility = View.GONE; overScrollMode = View.OVER_SCROLL_NEVER }
         val eqItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), dp(6), dp(2), dp(12)) }
@@ -645,10 +664,17 @@ class MainActivity : ComponentActivity() {
         eqView.onCommit = { SoftEq.save(this); updateEqUi() }
         eqItems.addView(eqView, LinearLayout.LayoutParams(-1, dp(250)).apply { topMargin = dp(4) })
         eqBassLabel = text("", 14f, Color.WHITE).apply { setPadding(dp(6), 0, 0, 0) }
-        eqItems.addView(eqBassLabel, LinearLayout.LayoutParams(-1, dp(32)))
+        val bassRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        bassRow.addView(eqBassLabel, LinearLayout.LayoutParams(0, -2, 1f))
+        bassRow.addView(button("Сбросить", 13f) {
+            setEq(gains = FloatArray(SoftEq.BANDS), bass = 0f, enabled = SoftEq.params.enabled)
+            SoftEq.save(this)
+            updateEqUi()
+        }, LinearLayout.LayoutParams(dp(110), dp(36)))
+        eqItems.addView(bassRow, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(6) })
         eqBassSeek = SeekBar(this).apply {
             max = 12
-            progressTintList = android.content.res.ColorStateList.valueOf(accent)
+            progressDrawable = sliderTrack()
             thumb = ChromeDrawable(false, 3f, true, 24)
         }
         eqBassSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -681,6 +707,7 @@ class MainActivity : ComponentActivity() {
         val prefs = getPreferences(MODE_PRIVATE)
         carMode = prefs.getBoolean("car_mode", false)
         updateCarToggle()
+        applyCarMode()
         animationMode = prefs.getInt("animation_mode", 1)
         prefs.getString("gif_uri", null)?.let { gifUri = Uri.parse(it) }
         displayAnimation()
@@ -714,11 +741,11 @@ class MainActivity : ComponentActivity() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         header.textSize = if (landscape) 19f else 23f
         headerBar.layoutParams = (headerBar.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 40 else 52) }
-        nav.layoutParams = (nav.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 52 else 61) }
+        nav.layoutParams = (nav.layoutParams as LinearLayout.LayoutParams).apply { height = dp((if (landscape) 52 else 61) + (if (carMode) 8 else 0)) }
         for (t in listOf(playerTab, libraryTab, settingsTab)) {
-            t.layoutParams = (t.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 42 else 52) }
+            t.layoutParams = (t.layoutParams as LinearLayout.LayoutParams).apply { height = dp((if (landscape) 42 else 52) + (if (carMode) 8 else 0)) }
         }
-        eqView.layoutParams = (eqView.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 170 else 250) }
+        eqView.layoutParams = (eqView.layoutParams as LinearLayout.LayoutParams).apply { height = dp(if (landscape) 170 else 330) }
         layoutLibrary()
         updateMini()
     }
@@ -740,6 +767,13 @@ class MainActivity : ComponentActivity() {
             b.background = if (on) activePanel() else panel()
             b.setTextColor(if (on) accent else Color.WHITE)
         }
+    }
+    // Car mode: bigger controls and tabs, screen stays on.
+    private fun applyCarMode() {
+        if (carMode) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applyChrome()
+        configurePlayerLayout()
     }
     private fun updateCarToggle() {
         carToggle.text = "Автомобильный режим: " + if (carMode) "ВКЛ" else "ВЫКЛ"
@@ -872,8 +906,10 @@ class MainActivity : ComponentActivity() {
         // wrap_content and adjustViewBounds preserve aspect ratio; maxHeight prevents oversized GIF.
         gif.layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
         // Compact metrics in landscape so the whole panel fits; roomy in portrait to fill the screen.
-        smallSize = if (landscape) 40 else 46
-        bigSize = if (landscape) 54 else 68
+        // Car mode = even bigger touch targets. Narrow landscape screens get slightly smaller buttons so the panel still fits.
+        val narrow = landscape && resources.configuration.screenWidthDp < 720
+        smallSize = if (landscape) (if (narrow) 36 else if (carMode) 52 else 42) else (if (carMode) 60 else 52)
+        bigSize = if (landscape) (if (narrow) 48 else if (carMode) 68 else 56) else (if (carMode) 90 else 78)
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
         spectrum.minimumHeight = dp(if (landscape) 34 else minSpectrum)
         (spectrum.layoutParams as LinearLayout.LayoutParams).apply {
@@ -882,7 +918,7 @@ class MainActivity : ComponentActivity() {
             topMargin = dp(if (landscape) 4 else 10); bottomMargin = dp(if (landscape) 4 else 10)
         }
         for (sp in spacers) sp.visibility = View.VISIBLE
-        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 58 else 86)
+        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(bigSize + 14)
         (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
         for (i in 0 until controlsRow.childCount) {
             val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
@@ -891,7 +927,7 @@ class MainActivity : ComponentActivity() {
         }
         details.setPadding(dp(12), dp(if (landscape) 6 else 10), dp(12), dp(if (landscape) 6 else 10))
         trackName.maxLines = if (landscape) 1 else 2
-        trackArtist.textSize = if (landscape) 18f else 21f
+        trackArtist.textSize = if (landscape) (if (carMode) 20f else 18f) else (if (carMode) 24f else 21f)
         trackName.textSize = if (landscape) 14f else 15f
         volumeRow.visibility = if (landscape) View.GONE else View.VISIBLE
         controlsRow.requestLayout(); details.requestLayout()
