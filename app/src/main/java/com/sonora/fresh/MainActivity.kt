@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var gifChoose: TextView
     private lateinit var details: LinearLayout
     private lateinit var displayPanel: LinearLayout
+    private lateinit var glass: FrameLayout
     private lateinit var controlPanel: LinearLayout
     private lateinit var trackName: TextView
     private lateinit var trackArtist: TextView
@@ -312,6 +313,102 @@ class MainActivity : ComponentActivity() {
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
 
+    // Recessed window the visualizer lives in: dark smoky back, inner shadow at the top, light lip at the bottom.
+    private inner class GlassFrameDrawable : Drawable() {
+        private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val shade = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val lip = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val rect = RectF()
+        private val inner = RectF()
+        private var radius = 0f
+        override fun onBoundsChange(b: android.graphics.Rect) {
+            rect.set(b.left + dp(1f), b.top + dp(1f), b.right - dp(1f), b.bottom - dp(1f))
+            inner.set(rect.left + dp(1.5f), rect.top + dp(1.5f), rect.right - dp(1.5f), rect.bottom - dp(1.5f))
+            radius = minOf(dp(10f), rect.height() / 2f, rect.width() / 2f)
+            val top = b.top.toFloat()
+            val bot = b.bottom.toFloat()
+            fill.shader = LinearGradient(0f, top, 0f, bot,
+                intArrayOf(0xFF02070B.toInt(), 0xFF071420.toInt(), 0xFF04101A.toInt()), null, Shader.TileMode.CLAMP)
+            shade.strokeWidth = dp(3f)
+            shade.shader = LinearGradient(0f, top, 0f, top + dp(14f), 0xCC000000.toInt(), 0x00000000, Shader.TileMode.CLAMP)
+            lip.strokeWidth = dp(1f)
+            lip.shader = LinearGradient(0f, bot - dp(10f), 0f, bot, 0x00FFFFFF, 0x40FFFFFF, Shader.TileMode.CLAMP)
+            edge.strokeWidth = dp(1f)
+            edge.color = 0xFF2A3640.toInt()
+        }
+        override fun draw(c: Canvas) {
+            if (rect.width() <= 0f) return
+            c.drawRoundRect(rect, radius, radius, fill)
+            c.drawRoundRect(inner, radius, radius, shade)
+            c.drawRoundRect(inner, radius, radius, lip)
+            c.drawRoundRect(rect, radius, radius, edge)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        @Suppress("DEPRECATION")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    // Fine horizontal scanlines for the glass (a 2x6 px tile, repeated).
+    private val scanBitmap: Bitmap by lazy {
+        val bmp = Bitmap.createBitmap(2, 6, Bitmap.Config.ARGB_8888)
+        bmp.setPixel(0, 0, Color.argb(46, 0, 0, 0))
+        bmp.setPixel(1, 0, Color.argb(46, 0, 0, 0))
+        bmp
+    }
+
+    // Smoked-glass cover drawn OVER the visualizer: dark tint, scanlines, soft diagonal reflection, vignette.
+    private inner class GlassDrawable : Drawable() {
+        private val tint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val lines = Paint().apply { shader = BitmapShader(scanBitmap, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT) }
+        private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val stripe = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x14FFFFFF }
+        private val vig = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val clip = android.graphics.Path()
+        private val band = android.graphics.Path()
+        private val thin = android.graphics.Path()
+        private val rect = RectF()
+        private var radius = 0f
+        override fun onBoundsChange(b: android.graphics.Rect) {
+            rect.set(b.left + dp(1f), b.top + dp(1f), b.right - dp(1f), b.bottom - dp(1f))
+            radius = minOf(dp(10f), rect.height() / 2f, rect.width() / 2f)
+            clip.reset()
+            clip.addRoundRect(rect, radius, radius, android.graphics.Path.Direction.CW)
+            val w = rect.width()
+            val h = rect.height()
+            tint.shader = LinearGradient(0f, rect.top, 0f, rect.bottom, 0x5A03080C, 0x2603080C, Shader.TileMode.CLAMP)
+            band.reset()
+            band.moveTo(rect.left, rect.top); band.lineTo(rect.left + w * 0.70f, rect.top)
+            band.lineTo(rect.left + w * 0.30f, rect.bottom); band.lineTo(rect.left, rect.bottom); band.close()
+            sheen.shader = LinearGradient(rect.left, rect.top, rect.left + w * 0.5f, rect.bottom, 0x2EFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+            thin.reset()
+            thin.moveTo(rect.left + w * 0.74f, rect.top); thin.lineTo(rect.left + w * 0.80f, rect.top)
+            thin.lineTo(rect.left + w * 0.52f, rect.bottom); thin.lineTo(rect.left + w * 0.46f, rect.bottom); thin.close()
+            vig.shader = RadialGradient(rect.centerX(), rect.centerY(), maxOf(w, h) * 0.75f,
+                intArrayOf(0x00000000, 0x00000000, 0x70000000), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            line.strokeWidth = dp(1f)
+            line.shader = LinearGradient(rect.left, 0f, rect.right, 0f, 0x55FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+        }
+        override fun draw(c: Canvas) {
+            if (rect.width() <= 0f) return
+            c.save()
+            c.clipPath(clip)
+            c.drawRect(rect, tint)
+            c.drawRect(rect, lines)
+            c.drawPath(band, sheen)
+            c.drawPath(thin, stripe)
+            c.drawRect(rect, vig)
+            c.restore()
+            c.drawLine(rect.left + radius, rect.top + dp(1f), rect.right - radius, rect.top + dp(1f), line)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        @Suppress("DEPRECATION")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
     // Round button / knob: chrome (or glowing cyan) ring around a brushed face with a top highlight.
     private inner class ChromeDrawable(private val accentRing: Boolean, private val ringDp: Float, private val silver: Boolean, private val sizeDp: Int = -1) : Drawable() {
         private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -482,7 +579,9 @@ class MainActivity : ComponentActivity() {
         titleRow.addView(heart, LinearLayout.LayoutParams(dp(40), dp(40)))
         displayPanel.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
         spectrum = SpectrumView()
-        displayPanel.addView(spectrum, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(7); bottomMargin = dp(8) })
+        glass = FrameLayout(this).apply { background = GlassFrameDrawable(); foreground = GlassDrawable() }
+        glass.addView(spectrum, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) })
+        displayPanel.addView(glass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(7) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         shuffleButton = button("⇄", 20f) {
             controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; updateModes() }
@@ -918,12 +1017,14 @@ class MainActivity : ComponentActivity() {
         smallSize = if (landscape) (if (narrow) 36 else if (carMode) 52 else 42) else (if (carMode) 60 else 52)
         bigSize = if (landscape) (if (narrow) 48 else if (carMode) 68 else 56) else (if (carMode) 90 else 78)
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
-        spectrum.minimumHeight = dp(if (landscape) 22 else minSpectrum)
-        (spectrum.layoutParams as LinearLayout.LayoutParams).apply {
+        glass.minimumHeight = dp(if (landscape) 30 else minSpectrum + 12)
+        (glass.layoutParams as LinearLayout.LayoutParams).apply {
             height = 0
             weight = 1f
-            topMargin = dp(if (landscape) 2 else 10); bottomMargin = dp(if (landscape) 2 else 10)
+            topMargin = dp(if (landscape) 3 else 10)
         }
+        val gm = dp(if (landscape) 4 else 8)
+        (spectrum.layoutParams as FrameLayout.LayoutParams).setMargins(gm, gm, gm, gm)
         for (sp in spacers) { sp.minimumHeight = dp(if (landscape) 4 else 8); sp.visibility = View.VISIBLE }
         (controlPanel.layoutParams as LinearLayout.LayoutParams).topMargin = dp(if (landscape) 6 else 8)
         (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(bigSize + (if (landscape) 8 else 14))
