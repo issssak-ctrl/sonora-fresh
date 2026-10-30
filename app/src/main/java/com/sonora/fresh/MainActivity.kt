@@ -69,6 +69,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var gifArea: LinearLayout
     private lateinit var gifChoose: TextView
     private lateinit var details: LinearLayout
+    private lateinit var displayPanel: LinearLayout
+    private lateinit var controlPanel: LinearLayout
     private lateinit var trackName: TextView
     private lateinit var trackArtist: TextView
     private lateinit var playButton: TextView
@@ -463,7 +465,10 @@ class MainActivity : ComponentActivity() {
         gifArea.addView(mediaBox, LinearLayout.LayoutParams(-1, -2))
         gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
-        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(12), dp(10)); background = darkPanel() }
+        details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Two separate panels: a "display" (track name + visualizer) and a "control deck" (seek, buttons, volume).
+        displayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = darkPanel() }
+        controlPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = darkPanel() }
         trackName = text("Выбери трек в библиотеке", 15f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setShadowLayer(dp(5f), 0f, 0f, 0x6600d1ff.toInt()) }
         trackArtist = text("", 21f, accent).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD; setShadowLayer(dp(7f), 0f, 0f, 0x8800d1ff.toInt()) }
         heart = IconView(iconHeart).apply { setOnClickListener { toggleFavorite() } }
@@ -475,9 +480,9 @@ class MainActivity : ComponentActivity() {
         }
         titleRow.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
         titleRow.addView(heart, LinearLayout.LayoutParams(dp(40), dp(40)))
-        details.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
+        displayPanel.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
         spectrum = SpectrumView()
-        details.addView(spectrum, LinearLayout.LayoutParams(-1, dp(55)).apply { topMargin = dp(7); bottomMargin = dp(8) })
+        displayPanel.addView(spectrum, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(7); bottomMargin = dp(8) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         shuffleButton = button("⇄", 20f) {
             controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; updateModes() }
@@ -509,7 +514,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         seek = SeekBar(this).apply { max = 1000; progressDrawable = sliderTrack(); thumb = ChromeDrawable(false, 3f, true, 24) }
-        details.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
+        controlPanel.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) controller?.let { if (it.duration > 0) it.seekTo(it.duration * progress / 1000) } }
             override fun onStartTrackingTouch(bar: SeekBar?) {}
@@ -520,10 +525,10 @@ class MainActivity : ComponentActivity() {
         total = text("0:00", 12f, muted).apply { gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL }
         times.addView(elapsed, LinearLayout.LayoutParams(0, dp(22), 1f))
         times.addView(total, LinearLayout.LayoutParams(0, dp(22), 1f))
-        details.addView(times)
-        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
-        details.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
-        details.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
+        controlPanel.addView(times)
+        controlPanel.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
+        controlPanel.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
+        controlPanel.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
         volumeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         volumeRow.addView(IconView(iconSpeakerLow), LinearLayout.LayoutParams(dp(34), dp(38)))
         volume = SeekBar(this).apply {
@@ -541,7 +546,9 @@ class MainActivity : ComponentActivity() {
         })
         volumeRow.addView(volume, LinearLayout.LayoutParams(0, dp(38), 1f))
         volumeRow.addView(IconView(iconSpeakerHigh), LinearLayout.LayoutParams(dp(34), dp(38)))
-        details.addView(volumeRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        controlPanel.addView(volumeRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        details.addView(displayPanel, LinearLayout.LayoutParams(-1, 0, 1f))
+        details.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         configurePlayerLayout()
         library = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         content.addView(library, LinearLayout.LayoutParams(-1, -1))
@@ -911,25 +918,28 @@ class MainActivity : ComponentActivity() {
         smallSize = if (landscape) (if (narrow) 36 else if (carMode) 52 else 42) else (if (carMode) 60 else 52)
         bigSize = if (landscape) (if (narrow) 48 else if (carMode) 68 else 56) else (if (carMode) 90 else 78)
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
-        spectrum.minimumHeight = dp(if (landscape) 34 else minSpectrum)
+        spectrum.minimumHeight = dp(if (landscape) 22 else minSpectrum)
         (spectrum.layoutParams as LinearLayout.LayoutParams).apply {
             height = 0
-            weight = if (landscape) 2f else 4f
-            topMargin = dp(if (landscape) 4 else 10); bottomMargin = dp(if (landscape) 4 else 10)
+            weight = 1f
+            topMargin = dp(if (landscape) 2 else 10); bottomMargin = dp(if (landscape) 2 else 10)
         }
-        for (sp in spacers) sp.visibility = View.VISIBLE
-        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(bigSize + 14)
+        for (sp in spacers) { sp.minimumHeight = dp(if (landscape) 4 else 8); sp.visibility = View.VISIBLE }
+        (controlPanel.layoutParams as LinearLayout.LayoutParams).topMargin = dp(if (landscape) 6 else 8)
+        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(bigSize + (if (landscape) 8 else 14))
         (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
         for (i in 0 until controlsRow.childCount) {
             val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
             val size = dp(if (i == 2) bigSize else smallSize)
             lp.width = size; lp.height = size
         }
-        details.setPadding(dp(12), dp(if (landscape) 6 else 10), dp(12), dp(if (landscape) 6 else 10))
+        displayPanel.setPadding(dp(12), dp(if (landscape) 6 else 10), dp(12), dp(if (landscape) 4 else 8))
+        controlPanel.setPadding(dp(12), dp(if (landscape) 4 else 8), dp(12), dp(if (landscape) 6 else 10))
         trackName.maxLines = if (landscape) 1 else 2
         trackArtist.textSize = if (landscape) (if (carMode) 20f else 18f) else (if (carMode) 24f else 21f)
         trackName.textSize = if (landscape) 14f else 15f
-        volumeRow.visibility = if (landscape) View.GONE else View.VISIBLE
+        // no room for the on-screen volume slider in landscape or on short portrait screens (hardware keys still work)
+        volumeRow.visibility = if (landscape || resources.configuration.screenHeightDp < 700) View.GONE else View.VISIBLE
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
@@ -1099,7 +1109,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     // Flexible gap inside the player panel: shares leftover height in portrait, hidden in landscape.
-    private fun spacer(): View = Flex().also { spacers.add(it) }
+    private fun spacer(): View = Flex().also { it.minimumHeight = dp(8); spacers.add(it) }
     private inner class Flex : View(this@MainActivity) {
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             setMeasuredDimension(getDefaultSize(suggestedMinimumWidth, widthMeasureSpec),
