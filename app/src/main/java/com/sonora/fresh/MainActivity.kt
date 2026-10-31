@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
     private class RowHolder(val root: LinearLayout, val icon: TextView, val title: TextView, val sub: TextView)
     private val allSongs = mutableListOf<Song>()
     private val spacers = mutableListOf<View>()
+    private var restored = false
     private val animButtons = mutableMapOf<Int, TextView>()
     private lateinit var carToggle: TextView
     private val favorites = mutableSetOf<String>()
@@ -829,6 +830,7 @@ class MainActivity : ComponentActivity() {
                     override fun onRepeatModeChanged(repeatMode: Int) { updateModes() }
                 })
                 refreshTrack(); updateModes()
+                tryRestore()
             } catch (e: Exception) { trackName.text = "Ошибка Media3: ${e.message}" }
         }, ContextCompat.getMainExecutor(this))
         handler.post { startupScan() }
@@ -1281,6 +1283,7 @@ class MainActivity : ComponentActivity() {
         if (song != null) {
             val list = modeSongs
             val index = list.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+            getSharedPreferences("sonora_state", MODE_PRIVATE).edit().putInt("q_mode", filterMode).putString("q_folder", selectedFolder).apply()
             controller?.apply { setMediaItems(list.map { toMediaItem(it) }, index, 0); prepare(); play() }
             trackName.text = song.name
             trackArtist.text = song.artist
@@ -1353,10 +1356,36 @@ class MainActivity : ComponentActivity() {
         }
         libraryAdapter.notifyDataSetChanged()
     }
+    // After a restart: put back the last queue, track and position (paused, so music never starts by itself).
+    private fun tryRestore() {
+        val c = controller ?: return
+        if (restored || allSongs.isEmpty()) return
+        restored = true
+        if (c.mediaItemCount > 0) return // the service is still alive and already has a queue
+        val state = getSharedPreferences("sonora_state", MODE_PRIVATE)
+        val id = state.getString("last_id", null) ?: return
+        val folder = state.getString("q_folder", null)
+        var list = when (state.getInt("q_mode", 0)) {
+            1 -> if (folder != null) allSongs.filter { it.folder == folder } else allSongs
+            2 -> allSongs.sortedByDescending { it.added }.take(50)
+            3 -> allSongs.filter { it.id in favorites }
+            else -> allSongs
+        }
+        var index = list.indexOfFirst { it.id == id }
+        if (index < 0) { list = allSongs; index = list.indexOfFirst { it.id == id } }
+        if (index < 0) return
+        c.setMediaItems(list.map { toMediaItem(it) }, index, state.getLong("last_pos", 0L))
+        c.shuffleModeEnabled = state.getBoolean("last_shuffle", false)
+        c.repeatMode = state.getInt("last_repeat", Player.REPEAT_MODE_OFF)
+        c.prepare()
+        refreshTrack()
+        updateModes()
+    }
     private fun setLibrary(songs: List<Song>) {
         allSongs.clear(); allSongs.addAll(songs)
         selectedFolder = null
         applyFilter()
+        tryRestore()
     }
     private fun scanDeviceMusic(quiet: Boolean = false) {
         val songs = mutableListOf<Song>()
