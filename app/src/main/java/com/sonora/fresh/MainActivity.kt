@@ -99,6 +99,10 @@ class MainActivity : ComponentActivity() {
     private val allSongs = mutableListOf<Song>()
     private val spacers = mutableListOf<View>()
     private var restored = false
+    private var gridLevel = 2
+    private lateinit var pixelGrid: PixelGridView
+    private lateinit var gridButton: TextView
+    private val gridNames = listOf("ВЫКЛ", "МЕЛКАЯ", "СРЕДНЯЯ", "КРУПНАЯ")
     private val animButtons = mutableMapOf<Int, TextView>()
     private lateinit var carToggle: TextView
     private val favorites = mutableSetOf<String>()
@@ -351,6 +355,42 @@ class MainActivity : ComponentActivity() {
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
 
+    private fun applyPixelGrid() {
+        if (!::pixelGrid.isInitialized) return
+        val on = gridLevel > 0 && animationMode != -1
+        pixelGrid.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) pixelGrid.setCell(dp(when (gridLevel) { 1 -> 2.5f; 2 -> 4f; else -> 6f }).toInt())
+    }
+    private fun updateGridButton() {
+        gridButton.text = "Пиксельная сетка: " + gridNames[gridLevel]
+        gridButton.background = if (gridLevel > 0) activePanel() else panel()
+        gridButton.setTextColor(if (gridLevel > 0) accent else Color.WHITE)
+    }
+
+    // Black grid over the video/GIF: every cell looks like one "pixel" of an LED screen.
+    private inner class PixelGridView : View(this@MainActivity) {
+        private val paint = Paint()
+        private var cell = 0
+        fun setCell(px: Int) {
+            val c = px.coerceAtLeast(4)
+            if (c == cell) return
+            cell = c
+            val line = Math.round(c * 0.22f).coerceAtLeast(1)
+            val bmp = Bitmap.createBitmap(c, c, Bitmap.Config.ARGB_8888)
+            val cv = Canvas(bmp)
+            val p = Paint()
+            p.color = Color.argb(200, 0, 0, 0)
+            cv.drawRect((c - line).toFloat(), 0f, c.toFloat(), c.toFloat(), p)
+            cv.drawRect(0f, (c - line).toFloat(), c.toFloat(), c.toFloat(), p)
+            paint.shader = BitmapShader(bmp, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+            invalidate()
+        }
+        override fun onDraw(c: Canvas) {
+            super.onDraw(c)
+            if (cell > 0) c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        }
+    }
+
     // Fine horizontal scanlines for the glass (a 2x6 px tile, repeated).
     private val scanBitmap: Bitmap by lazy {
         val bmp = Bitmap.createBitmap(2, 6, Bitmap.Config.ARGB_8888)
@@ -560,6 +600,8 @@ class MainActivity : ComponentActivity() {
         mediaBox.addView(gif, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         video = VideoView(this).apply { visibility = View.GONE; setAudioFocusRequest(AudioManager.AUDIOFOCUS_NONE) }
         mediaBox.addView(video, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+        pixelGrid = PixelGridView()
+        mediaBox.addView(pixelGrid, FrameLayout.LayoutParams(-1, -1))
         gifArea.addView(mediaBox, LinearLayout.LayoutParams(-1, -2))
         gifChoose = button("Выбрать свой GIF", 13f) { gifPicker.launch(arrayOf("image/gif")) }
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
@@ -738,6 +780,15 @@ class MainActivity : ComponentActivity() {
             }
             settingsItems.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         }
+        settingsItems.addView(sectionTitle("ПИКСЕЛЬНАЯ СЕТКА"), LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(6) })
+        gridButton = button("", 14f) {
+            gridLevel = (gridLevel + 1) % gridNames.size
+            getPreferences(MODE_PRIVATE).edit().putInt("grid_level", gridLevel).apply()
+            updateGridButton()
+            applyPixelGrid()
+        }
+        settingsItems.addView(gridButton, LinearLayout.LayoutParams(-1, dp(52)))
+        settingsItems.addView(text("Чёрная сетка поверх анимации, как у пиксельного LED-экрана", 12f, muted).apply { setPadding(dp(6), dp(4), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
         settingsItems.addView(sectionTitle("АВТОМОБИЛЬНЫЙ РЕЖИМ"), LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(10) })
         carToggle = button("", 14f) {
             carMode = !carMode
@@ -817,6 +868,8 @@ class MainActivity : ComponentActivity() {
         applyCarMode()
         animationMode = prefs.getInt("animation_mode", 1)
         prefs.getString("gif_uri", null)?.let { gifUri = Uri.parse(it) }
+        gridLevel = prefs.getInt("grid_level", 2).coerceIn(0, gridNames.size - 1)
+        updateGridButton()
         displayAnimation()
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(this, token).buildAsync()
@@ -942,6 +995,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun displayAnimation() {
         markAnimButtons()
+        applyPixelGrid()
         video.stopPlayback()
         video.visibility = View.GONE
         gif.visibility = View.GONE
