@@ -562,7 +562,7 @@ class MainActivity : ComponentActivity() {
         favorites.addAll(getPreferences(MODE_PRIVATE).getStringSet("favorites", emptySet()) ?: emptySet())
         window.statusBarColor = background; window.navigationBarColor = background
         root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(this@MainActivity.background) }
-        header = text("SONORA", 23f, 0xffe6edf3.toInt()).apply { typeface = Typeface.DEFAULT_BOLD; letterSpacing = 0.12f; setPadding(dp(18), 0, 0, 0) }
+        header = text("SONORA v2.0", 23f, 0xffe6edf3.toInt()).apply { typeface = Typeface.DEFAULT_BOLD; letterSpacing = 0.12f; setPadding(dp(18), 0, 0, 0) }
         header.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
             val mid = (bottom - top) / 2f
             val half = header.textSize * 0.55f
@@ -573,7 +573,8 @@ class MainActivity : ComponentActivity() {
         headerBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = panel(10f); setPadding(0, 0, dp(6), 0) }
         headerBar.addView(header, LinearLayout.LayoutParams(0, -1, 1f))
         headerBar.addView(IconView(iconSearch).apply { setOnClickListener { openSearch() } }, LinearLayout.LayoutParams(dp(44), -1))
-        headerBar.addView(IconView(iconEq).apply { setOnClickListener { showEqualizer() } }, LinearLayout.LayoutParams(dp(44), -1))
+        // EQ is available from settings; the approved portrait player has no EQ shortcut.
+        // Landscape EQ panel will be integrated in the next UI stage.
         headerBar.addView(IconView(iconDots).apply { setOnClickListener { showSettings() } }, LinearLayout.LayoutParams(dp(40), -1))
         root.addView(headerBar, LinearLayout.LayoutParams(-1, dp(52)))
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
