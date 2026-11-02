@@ -29,6 +29,7 @@ import android.provider.MediaStore
 import android.content.pm.PackageManager
 import android.widget.Toast
 import android.text.TextUtils
+import android.view.MotionEvent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -87,7 +88,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var nav: LinearLayout
     private lateinit var controlsRow: LinearLayout
     private lateinit var volumeRow: LinearLayout
-    private lateinit var volume: SeekBar
+    private lateinit var volume: RotaryVolumeView
     private lateinit var audio: AudioManager
     private var volumeDragging = false
     private var smallSize = 46
@@ -154,7 +155,7 @@ class MainActivity : ComponentActivity() {
                 elapsed.text = formatTime(p.currentPosition)
                 total.text = formatTime(duration)
             }
-            if (!volumeDragging && ::volume.isInitialized) volume.progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (!volumeDragging && ::volume.isInitialized) volume.level = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
             handler.postDelayed(this, 500)
         }
     }
@@ -511,6 +512,59 @@ class MainActivity : ComponentActivity() {
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
     private fun chrome(round: Boolean = false): Drawable = if (round) circle() else panel()
+    private inner class RotaryVolumeView : View(this@MainActivity) {
+        private val maxLevel = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        var level: Int = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            set(value) { field = value.coerceIn(0, maxLevel); invalidate() }
+        private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+        private val face = Paint(Paint.ANTI_ALIAS_FLAG)
+        private var lastAngle: Double? = null
+        private var angularCarry = 0.0
+        private fun angle(e: MotionEvent): Double = Math.toDegrees(kotlin.math.atan2((e.y-height/2f).toDouble(), (e.x-width/2f).toDouble()))
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width/2f; val cy = height/2f; val r = minOf(width,height)*0.44f
+            face.shader = RadialGradient(cx-r*.2f,cy-r*.25f,r*1.8f,intArrayOf(0xff8794a1.toInt(),0xff303c4a.toInt(),0xff0b121d.toInt()),null,Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx,cy,r*.76f,face)
+            face.shader = null
+            ring.strokeWidth = r*.105f; ring.color = 0xff223b4d.toInt()
+            canvas.drawArc(cx-r,cy-r,cx+r,cy+r,135f,270f,false,ring)
+            ring.color = accent
+            canvas.drawArc(cx-r,cy-r,cx+r,cy+r,135f,270f*level/maxLevel,false,ring)
+            face.color = Color.WHITE; face.textAlign = Paint.Align.CENTER
+            face.typeface = Typeface.DEFAULT_BOLD; face.textSize = r*.42f
+            canvas.drawText("${(level*100f/maxLevel).toInt()}%",cx,cy+r*.12f,face)
+            face.color = 0xffa9c3d1.toInt(); face.textSize = r*.20f
+            canvas.drawText("VOLUME",cx,cy+r*.44f,face)
+        }
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { lastAngle = angle(event); angularCarry = 0.0; parent?.requestDisallowInterceptTouchEvent(true); return true }
+                MotionEvent.ACTION_MOVE -> {
+                    val current = angle(event); val previous = lastAngle ?: current
+                    var delta = current - previous
+                    if (delta > 180) delta -= 360.0
+                    if (delta < -180) delta += 360.0
+                    lastAngle = current
+                    angularCarry += delta
+                    val step = 270.0/maxLevel
+                    val ticks = (angularCarry/step).toInt()
+                    if (ticks != 0) {
+                        angularCarry -= ticks*step
+                        val next = (level+ticks).coerceIn(0,maxLevel)
+                        if (next != level) {
+                            level = next
+                            try { audio.setStreamVolume(AudioManager.STREAM_MUSIC,next,0) } catch (_: Exception) {}
+                        }
+                    }
+                    return true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { lastAngle = null; parent?.requestDisallowInterceptTouchEvent(false); return true }
+            }
+            return true
+        }
+    }
+
     private inner class SpectrumView : View(this@MainActivity) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val shown = FloatArray(AudioLevels.BANDS)
@@ -581,7 +635,7 @@ class MainActivity : ComponentActivity() {
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         player = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(player, LinearLayout.LayoutParams(-1, -1))
-        gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; background = panel(8f); setPadding(dp(3), dp(3), dp(3), dp(3)) }
+        gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; setBackgroundColor(Color.TRANSPARENT); setPadding(0, 0, 0, 0) }
         // Landscape: make the player panel exactly as tall as the video frame.
         gifArea.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
             if (isLandscape() && ::details.isInitialized) {
@@ -623,7 +677,7 @@ class MainActivity : ComponentActivity() {
         titleRow.addView(heart, LinearLayout.LayoutParams(dp(40), dp(40)))
         displayPanel.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
         spectrum = SpectrumView()
-        glass = FrameLayout(this).apply { background = GlassFrameDrawable(); foreground = GlassDrawable() }
+        glass = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         glass.addView(spectrum, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) })
         displayPanel.addView(glass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(7) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
@@ -672,24 +726,11 @@ class MainActivity : ComponentActivity() {
         controlPanel.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
         controlPanel.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
         controlPanel.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
-        volumeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        volumeRow.addView(IconView(iconSpeakerLow), LinearLayout.LayoutParams(dp(34), dp(38)))
-        volume = SeekBar(this).apply {
-            max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
-            progressDrawable = sliderTrack()
-            thumb = ChromeDrawable(false, 3f, true, 24)
-        }
-        volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) try { audio.setStreamVolume(AudioManager.STREAM_MUSIC, progress, 0) } catch (_: Exception) {}
-            }
-            override fun onStartTrackingTouch(bar: SeekBar?) { volumeDragging = true }
-            override fun onStopTrackingTouch(bar: SeekBar?) { volumeDragging = false }
-        })
-        volumeRow.addView(volume, LinearLayout.LayoutParams(0, dp(38), 1f))
-        volumeRow.addView(IconView(iconSpeakerHigh), LinearLayout.LayoutParams(dp(34), dp(38)))
-        controlPanel.addView(volumeRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+        // Rotary-only system media volume: no vertical swipe or seek bar.
+        volumeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
+        volume = RotaryVolumeView()
+        volumeRow.addView(volume, LinearLayout.LayoutParams(dp(108), dp(108)))
+        controlPanel.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(112)).apply { topMargin = dp(4) })
         details.addView(displayPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         details.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         configurePlayerLayout()
@@ -1097,7 +1138,9 @@ class MainActivity : ComponentActivity() {
         trackArtist.textSize = if (landscape) (if (carMode) 20f else 18f) else (if (carMode) 24f else 21f)
         trackName.textSize = if (landscape) 14f else 15f
         // no room for the on-screen volume slider in landscape or on short portrait screens (hardware keys still work)
-        volumeRow.visibility = if (landscape || resources.configuration.screenHeightDp < 700) View.GONE else View.VISIBLE
+        volumeRow.visibility = View.VISIBLE
+        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 74 else 112)
+        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 70 else 108); height = dp(if (landscape) 70 else 108) }
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
