@@ -83,6 +83,10 @@ class MainActivity : ComponentActivity() {
     private lateinit var seek: SeekBar
     private lateinit var trackList: LinearLayout
     private lateinit var spectrum: View
+    private lateinit var secondSpectrum: View
+    private lateinit var secondGlass: FrameLayout
+    private lateinit var landscapeEqPanel: LinearLayout
+    private lateinit var landscapeEqView: EqView
     private lateinit var search: EditText
     private lateinit var header: TextView
     private lateinit var nav: LinearLayout
@@ -676,10 +680,29 @@ class MainActivity : ComponentActivity() {
         titleRow.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
         titleRow.addView(heart, LinearLayout.LayoutParams(dp(40), dp(40)))
         displayPanel.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
+        // Stage 3: compact, live ten-band equalizer for landscape mode.
+        landscapeEqPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = darkPanel()
+            setPadding(dp(4), dp(5), dp(4), dp(5))
+        }
+        val eqHeading = text("EQ 10 BAND", 12f, accent).apply { gravity = Gravity.CENTER }
+        landscapeEqPanel.addView(eqHeading, LinearLayout.LayoutParams(-1, dp(24)))
+        landscapeEqPanel.addView(button("ROCK", 12f) { applyPreset(3); landscapeEqView.gains.indices.forEach { i -> landscapeEqView.gains[i] = SoftEq.params.gains[i] }; landscapeEqView.invalidate() }, LinearLayout.LayoutParams(-1, dp(32)))
+        landscapeEqView = EqView().apply {
+            gains.indices.forEach { i -> gains[i] = SoftEq.params.gains[i] }
+            onChange = { setEq(gains = gains); if (::eqView.isInitialized) updateEqUi() }
+            onCommit = { SoftEq.save(this@MainActivity) }
+        }
+        landscapeEqPanel.addView(landscapeEqView, LinearLayout.LayoutParams(-1, 0, 1f))
         spectrum = SpectrumView()
         glass = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         glass.addView(spectrum, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) })
         displayPanel.addView(glass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(7) })
+        secondSpectrum = SpectrumView()
+        secondGlass = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
+        secondGlass.addView(secondSpectrum, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+        displayPanel.addView(secondGlass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         shuffleButton = button("⇄", 20f) {
             controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; updateModes() }
@@ -1094,10 +1117,12 @@ class MainActivity : ComponentActivity() {
         player.removeAllViews()
         (gifArea.parent as? ViewGroup)?.removeView(gifArea)
         (details.parent as? ViewGroup)?.removeView(details)
+        (landscapeEqPanel.parent as? ViewGroup)?.removeView(landscapeEqPanel)
         player.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         player.gravity = Gravity.TOP
         if (landscape) {
-            player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 1.2f).apply { marginEnd = dp(6) })
+            player.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 0.24f).apply { marginEnd = dp(5) })
+            player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 0.94f).apply { marginEnd = dp(5) })
             player.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
         } else {
             // Portrait: video on top, the player panel stretches to fill the rest of the screen.
@@ -1115,7 +1140,14 @@ class MainActivity : ComponentActivity() {
         smallSize = if (landscape) (if (narrow) 36 else if (carMode) 52 else 42) else (if (carMode) 60 else 52)
         bigSize = if (landscape) (if (narrow) 48 else if (carMode) 68 else 56) else (if (carMode) 90 else 78)
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
-        glass.minimumHeight = dp(if (landscape) 30 else minSpectrum + 12)
+        glass.minimumHeight = dp(if (landscape) 26 else minSpectrum + 12)
+        secondGlass.visibility = if (landscape) View.VISIBLE else View.GONE
+        landscapeEqPanel.visibility = if (landscape) View.VISIBLE else View.GONE
+        if (landscape) landscapeEqView.invalidate()
+        (secondGlass.layoutParams as LinearLayout.LayoutParams).apply {
+            height = 0
+            weight = if (landscape) 1f else 0f
+        }
         (glass.layoutParams as LinearLayout.LayoutParams).apply {
             height = 0
             weight = 1f
