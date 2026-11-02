@@ -1118,20 +1118,31 @@ class MainActivity : ComponentActivity() {
         (gifArea.parent as? ViewGroup)?.removeView(gifArea)
         (details.parent as? ViewGroup)?.removeView(details)
         (landscapeEqPanel.parent as? ViewGroup)?.removeView(landscapeEqPanel)
-        player.orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        (displayPanel.parent as? ViewGroup)?.removeView(displayPanel)
+        (controlPanel.parent as? ViewGroup)?.removeView(controlPanel)
+        player.orientation = LinearLayout.VERTICAL
         player.gravity = Gravity.TOP
         if (landscape) {
-            player.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 0.24f).apply { marginEnd = dp(5) })
-            player.addView(gifArea, LinearLayout.LayoutParams(0, -2, 0.94f).apply { marginEnd = dp(5) })
-            player.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+            // Stage 4: left EQ / centered, smaller video with transport underneath / right visualizers.
+            val columns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
+            val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 0.85f).apply { marginEnd = dp(6) })
+            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.25f).apply { marginEnd = dp(6) })
+            columns.addView(details, LinearLayout.LayoutParams(0, -1, 1.05f))
+            centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
+            centerColumn.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            details.addView(displayPanel, LinearLayout.LayoutParams(-1, -1))
+            player.addView(columns, LinearLayout.LayoutParams(-1, -1))
         } else {
-            // Portrait: video on top, the player panel stretches to fill the rest of the screen.
+            // Portrait keeps the established video / visualizer / controls order.
+            details.addView(displayPanel, LinearLayout.LayoutParams(-1, 0, 1f))
+            details.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
             player.addView(gifArea, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
             player.addView(details, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(8); bottomMargin = dp(6) })
         }
         gif.scaleType = ImageView.ScaleType.FIT_CENTER
         gif.adjustViewBounds = true
-        gif.maxHeight = if (landscape) (resources.displayMetrics.heightPixels * 0.70f).toInt() else (resources.displayMetrics.heightPixels * 0.52f).toInt()
+        gif.maxHeight = if (landscape) (resources.displayMetrics.heightPixels * 0.42f).toInt() else (resources.displayMetrics.heightPixels * 0.52f).toInt()
         // wrap_content and adjustViewBounds preserve aspect ratio; maxHeight prevents oversized GIF.
         gif.layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
         // Compact metrics in landscape so the whole panel fits; roomy in portrait to fill the screen.
@@ -1156,8 +1167,8 @@ class MainActivity : ComponentActivity() {
         val gm = dp(if (landscape) 4 else 8)
         (spectrum.layoutParams as FrameLayout.LayoutParams).setMargins(gm, gm, gm, gm)
         for (sp in spacers) { sp.minimumHeight = dp(if (landscape) 4 else 8); sp.visibility = View.VISIBLE }
-        (controlPanel.layoutParams as LinearLayout.LayoutParams).topMargin = dp(if (landscape) 6 else 8)
-        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(bigSize + (if (landscape) 8 else 14))
+        (controlPanel.layoutParams as LinearLayout.LayoutParams).topMargin = dp(if (landscape) 4 else 8)
+        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(bigSize + (if (landscape) 2 else 14))
         (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
         for (i in 0 until controlsRow.childCount) {
             val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
@@ -1171,8 +1182,8 @@ class MainActivity : ComponentActivity() {
         trackName.textSize = if (landscape) 14f else 15f
         // no room for the on-screen volume slider in landscape or on short portrait screens (hardware keys still work)
         volumeRow.visibility = View.VISIBLE
-        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 74 else 112)
-        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 70 else 108); height = dp(if (landscape) 70 else 108) }
+        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 54 else 112)
+        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 52 else 108); height = dp(if (landscape) 52 else 108) }
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
