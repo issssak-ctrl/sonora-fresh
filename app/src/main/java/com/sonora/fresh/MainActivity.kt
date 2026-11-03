@@ -93,6 +93,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var search: EditText
     private lateinit var header: TextView
     private lateinit var nav: LinearLayout
+    private lateinit var transportTimes: LinearLayout
+    private lateinit var landscapeShortcuts: LinearLayout
+    private lateinit var transportDeckRow: LinearLayout
     private lateinit var controlsRow: LinearLayout
     private lateinit var volumeRow: LinearLayout
     private lateinit var volume: RotaryVolumeView
@@ -778,6 +781,7 @@ class MainActivity : ComponentActivity() {
         total = text("0:00", 12f, muted).apply { gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL }
         times.addView(elapsed, LinearLayout.LayoutParams(0, dp(22), 1f))
         times.addView(total, LinearLayout.LayoutParams(0, dp(22), 1f))
+        transportTimes = times
         controlPanel.addView(times)
         controlPanel.addView(spacer(), LinearLayout.LayoutParams(-1, 0, 1f))
         controlPanel.addView(controls, LinearLayout.LayoutParams(-1, dp(86)))
@@ -789,6 +793,8 @@ class MainActivity : ComponentActivity() {
         controlPanel.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(112)).apply { topMargin = dp(4) })
         details.addView(displayPanel, LinearLayout.LayoutParams(-1, 0, 1f))
         details.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        landscapeShortcuts = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        transportDeckRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         configurePlayerLayout()
         library = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         content.addView(library, LinearLayout.LayoutParams(-1, -1))
@@ -1019,6 +1025,7 @@ class MainActivity : ComponentActivity() {
         libraryTab.setTextColor(if (show) accent else Color.WHITE)
         settingsTab.setTextColor(Color.WHITE)
         markTabs(if (show) libraryTab else playerTab)
+        nav.visibility = if (!show && isLandscape()) View.GONE else View.VISIBLE
     }
     private fun markAnimButtons() {
         for ((mode, b) in animButtons) {
@@ -1153,6 +1160,12 @@ class MainActivity : ComponentActivity() {
     private fun configurePlayerLayout() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         player.removeAllViews()
+        // Reparent every transport view before rebuilding: Android views may have only one parent.
+        listOf(seek, transportTimes, controlsRow, volumeRow).forEach { (it.parent as? ViewGroup)?.removeView(it) }
+        transportDeckRow.removeAllViews()
+        landscapeShortcuts.removeAllViews()
+        controlPanel.removeAllViews()
+        nav.visibility = if (landscape && player.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         (gifArea.parent as? ViewGroup)?.removeView(gifArea)
         (details.parent as? ViewGroup)?.removeView(details)
         (landscapeEqPanel.parent as? ViewGroup)?.removeView(landscapeEqPanel)
@@ -1162,19 +1175,48 @@ class MainActivity : ComponentActivity() {
         player.gravity = Gravity.TOP
         (trackTitleRow.parent as? ViewGroup)?.removeView(trackTitleRow)
         if (landscape) {
-            // Approved three-column Player: full-height EQ / video and transport / dual visualizers.
+            // Stage 8: two-level layout. Top = EQ / video / independent visualizers.
+            // Bottom = one full-width transport deck, not a panel inside the video column.
             val columns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
             val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.08f).apply { marginEnd = dp(7) })
-            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.62f).apply { marginEnd = dp(7) })
-            columns.addView(details, LinearLayout.LayoutParams(0, -1, 1.22f))
-            centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, dp(124)))
-            centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(3) })
-            centerColumn.addView(controlPanel, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
-            details.addView(displayPanel, LinearLayout.LayoutParams(-1, -1))
-            player.addView(columns, LinearLayout.LayoutParams(-1, -1))
+            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.05f).apply { marginEnd = dp(6) })
+            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f).apply { marginEnd = dp(6) })
+            columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.20f))
+            centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
+            centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(42)))
+            player.addView(columns, LinearLayout.LayoutParams(-1, 0, 1f))
+
+            // Left shortcuts: direct access to the existing library filters.
+            fun shortcut(label: String, mode: Int): TextView = button(label, 11f) {
+                setFilterMode(mode)
+                showLibrary(true)
+            }
+            listOf(shortcut("LIBRARY", 0), shortcut("FOLDERS", 1), shortcut("FAVORITES", 3)).forEach { b ->
+                landscapeShortcuts.addView(b, LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginEnd = dp(3) })
+            }
+            transportDeckRow.addView(landscapeShortcuts, LinearLayout.LayoutParams(0, -1, 1.15f))
+            transportDeckRow.addView(controlsRow, LinearLayout.LayoutParams(0, dp(66), 1.65f))
+            transportDeckRow.addView(volumeRow, LinearLayout.LayoutParams(0, dp(76), .65f))
+            controlPanel.addView(transportDeckRow, LinearLayout.LayoutParams(-1, dp(78)))
+            val seekArea = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            (elapsed.parent as? ViewGroup)?.removeView(elapsed)
+            (total.parent as? ViewGroup)?.removeView(total)
+            seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(48), dp(24)))
+            seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(28), 1f))
+            seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(48), dp(24)))
+            controlPanel.addView(seekArea, LinearLayout.LayoutParams(-1, dp(30)))
+            player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(112)).apply { topMargin = dp(4) })
         } else {
-            // Portrait: no EQ, one visualizer; metadata remains below the animation.
+            // Portrait retains one visualizer and a vertical, scroll-free transport.
+            (elapsed.parent as? ViewGroup)?.removeView(elapsed)
+            (total.parent as? ViewGroup)?.removeView(total)
+            transportTimes.removeAllViews()
+            transportTimes.addView(elapsed, LinearLayout.LayoutParams(0, dp(22), 1f))
+            transportTimes.addView(total, LinearLayout.LayoutParams(0, dp(22), 1f))
+            controlPanel.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
+            controlPanel.addView(transportTimes)
+            controlPanel.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(92)))
+            controlPanel.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(112)))
             details.addView(trackTitleRow, LinearLayout.LayoutParams(-1, -2))
             details.addView(displayPanel, LinearLayout.LayoutParams(-1, 0, 1f))
             details.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
@@ -1209,8 +1251,8 @@ class MainActivity : ComponentActivity() {
         val gm = dp(if (landscape) 4 else 8)
         (spectrum.layoutParams as FrameLayout.LayoutParams).setMargins(gm, gm, gm, gm)
         for (sp in spacers) { sp.minimumHeight = dp(if (landscape) 4 else 8); sp.visibility = View.VISIBLE }
-        (controlPanel.layoutParams as LinearLayout.LayoutParams).topMargin = dp(if (landscape) 4 else 8)
-        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(bigSize + (if (landscape) 2 else 14))
+        (controlPanel.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(if (landscape) 4 else 8)
+        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 66 else bigSize + 14)
         (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
         for (i in 0 until controlsRow.childCount) {
             val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
@@ -1224,8 +1266,8 @@ class MainActivity : ComponentActivity() {
         trackName.textSize = if (landscape) 14f else 15f
         // no room for the on-screen volume slider in landscape or on short portrait screens (hardware keys still work)
         volumeRow.visibility = View.VISIBLE
-        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 52 else 112)
-        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 50 else 108); height = dp(if (landscape) 50 else 108) }
+        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 76 else 112)
+        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 74 else 108); height = dp(if (landscape) 74 else 108) }
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
