@@ -1203,9 +1203,23 @@ class MainActivity : ComponentActivity() {
             visualizerSelector1.gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
             visualizerSelector2.gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
             val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            // Keep video dimensions untouched. Move its entire column slightly right.
+            centerColumn.translationX = dp(11f)
             columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.05f))
             columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f))
             columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.20f))
+            // EQ and visualizers are top-aligned, shorter than the video column.
+            // Use the real available height rather than the screen height.
+            columns.addOnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
+                val available = bottom - columns.top
+                if (available > 0) {
+                    val target = (available * 0.79f).toInt()
+                    listOf(landscapeEqPanel, displayPanel).forEach { view ->
+                        val lp = view.layoutParams as LinearLayout.LayoutParams
+                        if (lp.height != target) { lp.height = target; view.layoutParams = lp }
+                    }
+                }
+            }
             centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
             trackTitleRow.setPadding(dp(12), 0, dp(12), 0)
             trackName.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
@@ -1247,7 +1261,24 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(5), 0, dp(5), 0)
             }
             controlsRow.gravity = Gravity.CENTER
-            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(75)))
+            // Five reference-sized controls: small / medium / largest / medium / small.
+            controlsRow.post {
+                val width = controlsRow.width
+                if (width > 0) {
+                    val base = intArrayOf(36, 58, 82, 58, 36).map { dp(it) }
+                    val margins = dp(4) * 10
+                    val factor = minOf(1f, (width - margins).toFloat() / base.sum().coerceAtLeast(1))
+                    for (i in 0 until minOf(5, controlsRow.childCount)) {
+                        val child = controlsRow.getChildAt(i)
+                        val size = (base[i] * factor).toInt().coerceAtLeast(dp(25))
+                        val lp = child.layoutParams as LinearLayout.LayoutParams
+                        lp.width = size; lp.height = size
+                        lp.marginStart = dp(4); lp.marginEnd = dp(4)
+                        child.layoutParams = lp
+                    }
+                }
+            }
+            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(84)))
             val seekArea = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -1265,8 +1296,8 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(6), 0, dp(6), 0)
             }
             volumeRow.removeView(volume)
-            volumeRow.addView(volume, LinearLayout.LayoutParams(dp(104), dp(104)))
-            rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(108)))
+            volumeRow.addView(volume, LinearLayout.LayoutParams(dp(108), dp(108)))
+            rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(110)))
 
             // Width fractions approximate the approved mockup: 25% / 51% / 24%.
             transportDeckRow.gravity = Gravity.CENTER_VERTICAL
