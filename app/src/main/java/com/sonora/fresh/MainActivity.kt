@@ -71,6 +71,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var gifChoose: TextView
     private lateinit var details: LinearLayout
     private lateinit var displayPanel: LinearLayout
+    private lateinit var trackTitleRow: LinearLayout
+    private lateinit var visualizerSelector1: TextView
+    private lateinit var visualizerSelector2: TextView
     private lateinit var glass: FrameLayout
     private lateinit var controlPanel: LinearLayout
     private lateinit var trackName: TextView
@@ -570,6 +573,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private inner class SpectrumView : View(this@MainActivity) {
+        var mode = 0 // 0 Bars, 1 Wave, 2 Spectrum
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val shown = FloatArray(AudioLevels.BANDS)
         private var barShader: Shader? = null
@@ -589,17 +593,40 @@ class MainActivity : ComponentActivity() {
             val playing = controller?.isPlaying == true
             val levels = AudioLevels.bands
             var alive = false
+            val wavePath = android.graphics.Path()
             for (i in 0 until bars) {
                 val target = if (playing) levels[i] else 0f
                 shown[i] = if (target >= shown[i]) target else shown[i] * 0.88f
                 if (shown[i] > 0.02f) alive = true
+                if (mode == 1) {
+                    val x = (i + 0.5f) * spacing
+                    val y = height * (0.5f - shown[i] * 0.42f)
+                    if (i == 0) wavePath.moveTo(x, y) else wavePath.lineTo(x, y)
+                    continue
+                }
                 val h = height * (0.04f + 0.96f * shown[i])
                 val bw = spacing * 0.5f
                 val bx = i * spacing + (spacing - bw) / 2f
+                if (mode == 2) {
+                    val y = height * (1f - shown[i] * 0.92f)
+                    p.alpha = 230
+                    c.drawRoundRect(bx, y, bx + bw, height.toFloat(), dp(1).toFloat(), dp(1).toFloat(), p)
+                    continue
+                }
                 p.alpha = 38
                 c.drawRoundRect(bx - bw * 0.7f, height - h, bx + bw * 1.7f, height.toFloat(), bw, bw, p)
                 p.alpha = if (i % 4 == 0) 255 else 220
                 c.drawRoundRect(bx, height - h, bx + bw, height.toFloat(), bw / 2f, bw / 2f, p)
+            }
+            if (mode == 1) {
+                p.alpha = 255
+                p.shader = null
+                p.color = accent
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = dp(2).toFloat()
+                c.drawPath(wavePath, p)
+                p.style = Paint.Style.FILL
+                p.shader = barShader
             }
             if (playing || alive) postInvalidateOnAnimation()
         }
@@ -642,7 +669,7 @@ class MainActivity : ComponentActivity() {
         gifArea = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.TOP; setBackgroundColor(Color.TRANSPARENT); setPadding(0, 0, 0, 0) }
         // Landscape: make the player panel exactly as tall as the video frame.
         gifArea.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
-            if (isLandscape() && ::details.isInitialized) {
+            if (false && isLandscape() && ::details.isInitialized) {
                 val h = bottom - top
                 val lp = details.layoutParams
                 val want = if (h > dp(150)) h else ViewGroup.LayoutParams.WRAP_CONTENT
@@ -679,7 +706,7 @@ class MainActivity : ComponentActivity() {
         }
         titleRow.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
         titleRow.addView(heart, LinearLayout.LayoutParams(dp(40), dp(40)))
-        displayPanel.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
+        trackTitleRow = titleRow
         // Stage 3: compact, live ten-band equalizer for landscape mode.
         landscapeEqPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -698,11 +725,17 @@ class MainActivity : ComponentActivity() {
         spectrum = SpectrumView()
         glass = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         glass.addView(spectrum, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) })
-        displayPanel.addView(glass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(7) })
+        visualizerSelector1 = button("Wave ▾", 12f) { cycleVisualizer(spectrum as SpectrumView, visualizerSelector1) }
+        displayPanel.addView(visualizerSelector1, LinearLayout.LayoutParams(-1, dp(28)))
+        displayPanel.addView(glass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
         secondSpectrum = SpectrumView()
         secondGlass = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         secondGlass.addView(secondSpectrum, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
-        displayPanel.addView(secondGlass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(4) })
+        visualizerSelector2 = button("Bars ▾", 12f) { cycleVisualizer(secondSpectrum as SpectrumView, visualizerSelector2) }
+        (spectrum as SpectrumView).mode = 1
+        (secondSpectrum as SpectrumView).mode = 0
+        displayPanel.addView(visualizerSelector2, LinearLayout.LayoutParams(-1, dp(28)))
+        displayPanel.addView(secondGlass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         shuffleButton = button("⇄", 20f) {
             controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; updateModes() }
@@ -1112,6 +1145,11 @@ class MainActivity : ComponentActivity() {
         updateHeart()
         if (::libraryAdapter.isInitialized) libraryAdapter.notifyDataSetChanged()
     }
+    private fun cycleVisualizer(view: SpectrumView, label: TextView) {
+        view.mode = (view.mode + 1) % 3
+        label.text = arrayOf("Bars ▾", "Wave ▾", "Spectrum ▾")[view.mode]
+        view.invalidate()
+    }
     private fun configurePlayerLayout() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         player.removeAllViews()
@@ -1122,20 +1160,22 @@ class MainActivity : ComponentActivity() {
         (controlPanel.parent as? ViewGroup)?.removeView(controlPanel)
         player.orientation = LinearLayout.VERTICAL
         player.gravity = Gravity.TOP
+        (trackTitleRow.parent as? ViewGroup)?.removeView(trackTitleRow)
         if (landscape) {
-            // Stage 5: balanced landscape columns; compact controls below the video,
-            // and two vertically expanding visualizers on the right.
+            // Approved three-column Player: full-height EQ / video and transport / dual visualizers.
             val columns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
             val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 0.95f).apply { marginEnd = dp(6) })
-            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.40f).apply { marginEnd = dp(6) })
-            columns.addView(details, LinearLayout.LayoutParams(0, -1, 1.25f))
-            centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
-            centerColumn.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(196)).apply { topMargin = dp(4) })
+            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.08f).apply { marginEnd = dp(7) })
+            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.62f).apply { marginEnd = dp(7) })
+            columns.addView(details, LinearLayout.LayoutParams(0, -1, 1.22f))
+            centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, dp(124)))
+            centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(3) })
+            centerColumn.addView(controlPanel, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
             details.addView(displayPanel, LinearLayout.LayoutParams(-1, -1))
             player.addView(columns, LinearLayout.LayoutParams(-1, -1))
         } else {
-            // Portrait keeps the established video / visualizer / controls order.
+            // Portrait: no EQ, one visualizer; metadata remains below the animation.
+            details.addView(trackTitleRow, LinearLayout.LayoutParams(-1, -2))
             details.addView(displayPanel, LinearLayout.LayoutParams(-1, 0, 1f))
             details.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
             player.addView(gifArea, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
@@ -1154,6 +1194,7 @@ class MainActivity : ComponentActivity() {
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
         glass.minimumHeight = dp(if (landscape) 26 else minSpectrum + 12)
         secondGlass.visibility = if (landscape) View.VISIBLE else View.GONE
+        visualizerSelector2.visibility = if (landscape) View.VISIBLE else View.GONE
         landscapeEqPanel.visibility = if (landscape) View.VISIBLE else View.GONE
         if (landscape) landscapeEqView.invalidate()
         (secondGlass.layoutParams as LinearLayout.LayoutParams).apply {
@@ -1183,8 +1224,8 @@ class MainActivity : ComponentActivity() {
         trackName.textSize = if (landscape) 14f else 15f
         // no room for the on-screen volume slider in landscape or on short portrait screens (hardware keys still work)
         volumeRow.visibility = View.VISIBLE
-        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 46 else 112)
-        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 44 else 108); height = dp(if (landscape) 44 else 108) }
+        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 52 else 112)
+        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 50 else 108); height = dp(if (landscape) 50 else 108) }
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
