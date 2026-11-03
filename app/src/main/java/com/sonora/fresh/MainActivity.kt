@@ -795,7 +795,7 @@ class MainActivity : ComponentActivity() {
         details.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         landscapeShortcuts = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         transportDeckRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        configurePlayerLayout()
+        // Layout is configured later by applyCarMode(), after nav and other views are initialized.
         library = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         content.addView(library, LinearLayout.LayoutParams(-1, -1))
         // Row 1: compact actions (in landscape the filter chips join this row)
