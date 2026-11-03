@@ -699,7 +699,7 @@ class MainActivity : ComponentActivity() {
         gifArea.addView(gifChoose, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(8) })
         details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // Two separate panels: a "display" (track name + visualizer) and a "control deck" (seek, buttons, volume).
-        displayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = darkPanel() }
+        displayPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
         controlPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; background = darkPanel() }
         trackName = text("Выбери трек в библиотеке", 15f, accent).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setShadowLayer(dp(5f), 0f, 0f, 0x6600d1ff.toInt()) }
         trackArtist = text("", 21f, accent).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; typeface = Typeface.DEFAULT_BOLD; setShadowLayer(dp(7f), 0f, 0f, 0x8800d1ff.toInt()) }
@@ -716,7 +716,7 @@ class MainActivity : ComponentActivity() {
         // Stage 3: compact, live ten-band equalizer for landscape mode.
         landscapeEqPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = darkPanel()
+            setBackgroundColor(Color.BLACK)
             setPadding(dp(4), dp(5), dp(4), dp(5))
         }
         val eqHeading = text("EQ 10 BAND", 12f, accent).apply { gravity = Gravity.CENTER }
@@ -1169,7 +1169,10 @@ class MainActivity : ComponentActivity() {
     private fun configurePlayerLayout() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         player.removeAllViews()
-        header.text = if (landscape) "SONORA v2.0                         S O N O R A" else "SONORA v2.0"
+        header.text = "SONORA v2.0"
+        if (landscape) {
+            header.gravity = Gravity.CENTER_VERTICAL
+        }
         // Reparent every transport view before rebuilding: Android views may have only one parent.
         listOf(seek, transportTimes, controlsRow, volumeRow).forEach { (it.parent as? ViewGroup)?.removeView(it) }
         transportDeckRow.removeAllViews()
@@ -1187,12 +1190,26 @@ class MainActivity : ComponentActivity() {
         if (landscape) {
             // Stage 8: two-level layout. Top = EQ / video / independent visualizers.
             // Bottom = one full-width transport deck, not a panel inside the video column.
-            val columns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
+            val columns = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.TOP
+                setBackgroundColor(Color.BLACK)
+            }
+            // All three areas share one uninterrupted black canvas.
+            landscapeEqPanel.setBackgroundColor(Color.BLACK)
+            displayPanel.setBackgroundColor(Color.BLACK)
+            visualizerSelector1.background = null
+            visualizerSelector2.background = null
+            visualizerSelector1.gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
+            visualizerSelector2.gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
             val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.05f).apply { marginEnd = dp(6) })
-            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f).apply { marginEnd = dp(6) })
+            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.05f))
+            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f))
             columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.20f))
             centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
+            trackTitleRow.setPadding(dp(12), 0, dp(12), 0)
+            trackName.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
+            trackArtist.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
             centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(42)))
             player.addView(columns, LinearLayout.LayoutParams(-1, 0, 1f))
 
@@ -1259,6 +1276,8 @@ class MainActivity : ComponentActivity() {
             controlPanel.addView(transportDeckRow, LinearLayout.LayoutParams(-1, -1))
             player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(116)).apply { topMargin = dp(3) })
         } else {
+            displayPanel.background = darkPanel()
+            visualizerSelector1.background = panel()
             // Portrait retains one visualizer and a vertical, scroll-free transport.
             (elapsed.parent as? ViewGroup)?.removeView(elapsed)
             (total.parent as? ViewGroup)?.removeView(total)
