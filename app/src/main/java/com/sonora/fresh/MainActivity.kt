@@ -1123,14 +1123,15 @@ class MainActivity : ComponentActivity() {
         player.orientation = LinearLayout.VERTICAL
         player.gravity = Gravity.TOP
         if (landscape) {
-            // Stage 4: left EQ / centered, smaller video with transport underneath / right visualizers.
+            // Stage 5: balanced landscape columns; compact controls below the video,
+            // and two vertically expanding visualizers on the right.
             val columns = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
             val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 0.85f).apply { marginEnd = dp(6) })
-            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.25f).apply { marginEnd = dp(6) })
-            columns.addView(details, LinearLayout.LayoutParams(0, -1, 1.05f))
+            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 0.95f).apply { marginEnd = dp(6) })
+            columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.40f).apply { marginEnd = dp(6) })
+            columns.addView(details, LinearLayout.LayoutParams(0, -1, 1.25f))
             centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
-            centerColumn.addView(controlPanel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            centerColumn.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(196)).apply { topMargin = dp(4) })
             details.addView(displayPanel, LinearLayout.LayoutParams(-1, -1))
             player.addView(columns, LinearLayout.LayoutParams(-1, -1))
         } else {
@@ -1142,7 +1143,7 @@ class MainActivity : ComponentActivity() {
         }
         gif.scaleType = ImageView.ScaleType.FIT_CENTER
         gif.adjustViewBounds = true
-        gif.maxHeight = if (landscape) (resources.displayMetrics.heightPixels * 0.42f).toInt() else (resources.displayMetrics.heightPixels * 0.52f).toInt()
+        gif.maxHeight = if (landscape) (resources.displayMetrics.heightPixels * 0.52f).toInt() else (resources.displayMetrics.heightPixels * 0.52f).toInt()
         // wrap_content and adjustViewBounds preserve aspect ratio; maxHeight prevents oversized GIF.
         gif.layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)
         // Compact metrics in landscape so the whole panel fits; roomy in portrait to fill the screen.
@@ -1182,8 +1183,8 @@ class MainActivity : ComponentActivity() {
         trackName.textSize = if (landscape) 14f else 15f
         // no room for the on-screen volume slider in landscape or on short portrait screens (hardware keys still work)
         volumeRow.visibility = View.VISIBLE
-        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 54 else 112)
-        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 52 else 108); height = dp(if (landscape) 52 else 108) }
+        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 46 else 112)
+        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 44 else 108); height = dp(if (landscape) 44 else 108) }
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
