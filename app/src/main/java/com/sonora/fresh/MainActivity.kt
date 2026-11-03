@@ -1186,28 +1186,67 @@ class MainActivity : ComponentActivity() {
             centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(42)))
             player.addView(columns, LinearLayout.LayoutParams(-1, 0, 1f))
 
-            // Left shortcuts: direct access to the existing library filters.
+            // Stage 10: reference composition: compact left bank, centered transport,
+            // dedicated right rotary knob. Seek is ONLY beneath the center bank.
             fun shortcut(label: String, mode: Int): TextView = button(label, 11f) {
                 setFilterMode(mode)
                 showLibrary(true)
             }
-            listOf(shortcut("♫\nLIBRARY", 0), shortcut("▱\nFOLDERS", 1), shortcut("♡\nFAVORITES", 3)).forEach { b ->
+            val shortcuts = listOf(
+                shortcut("♫\nLIBRARY", 0),
+                shortcut("▱\nFOLDERS", 1),
+                shortcut("♡\nFAVORITES", 3)
+            )
+            shortcuts.forEachIndexed { index, b ->
                 b.gravity = Gravity.CENTER
                 b.textSize = 11f
-                landscapeShortcuts.addView(b, LinearLayout.LayoutParams(0, dp(62), 1f).apply { marginEnd = dp(5) })
+                b.background = if (index == 0) activePanel(12f) else darkPanel(12f)
+                landscapeShortcuts.addView(b, LinearLayout.LayoutParams(0, dp(72), 1f))
             }
-            transportDeckRow.addView(landscapeShortcuts, LinearLayout.LayoutParams(0, -1, 1.30f))
-            transportDeckRow.addView(controlsRow, LinearLayout.LayoutParams(0, dp(88), 1.75f))
-            transportDeckRow.addView(volumeRow, LinearLayout.LayoutParams(0, dp(102), .80f))
-            controlPanel.addView(transportDeckRow, LinearLayout.LayoutParams(-1, dp(104)))
-            val seekArea = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            landscapeShortcuts.background = darkPanel(14f)
+            landscapeShortcuts.setPadding(dp(5), dp(5), dp(5), dp(5))
+
+            val leftDeck = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(8), 0, dp(12), 0)
+            }
+            leftDeck.addView(landscapeShortcuts, LinearLayout.LayoutParams(-1, dp(82)))
+
+            val centerDeck = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(4), 0, dp(4), 0)
+            }
+            controlsRow.gravity = Gravity.CENTER
+            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(105)))
+            val seekArea = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
             (elapsed.parent as? ViewGroup)?.removeView(elapsed)
             (total.parent as? ViewGroup)?.removeView(total)
-            seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(48), dp(24)))
+            seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(47), dp(28)))
             seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(28), 1f))
-            seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(48), dp(24)))
-            controlPanel.addView(seekArea, LinearLayout.LayoutParams(-1, dp(30)))
-            player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(146)).apply { topMargin = dp(4) })
+            seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(47), dp(28)))
+            centerDeck.addView(seekArea, LinearLayout.LayoutParams(-1, dp(34)))
+
+            val rightDeck = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(10), 0, dp(8), 0)
+            }
+            // The rotary interaction remains unchanged; only its dimensions change.
+            volumeRow.removeView(volume)
+            volumeRow.addView(volume, LinearLayout.LayoutParams(dp(128), dp(128)))
+            rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(139)))
+
+            transportDeckRow.gravity = Gravity.CENTER_VERTICAL
+            transportDeckRow.addView(leftDeck, LinearLayout.LayoutParams(0, -1, 1.12f))
+            transportDeckRow.addView(centerDeck, LinearLayout.LayoutParams(0, -1, 2.35f))
+            transportDeckRow.addView(rightDeck, LinearLayout.LayoutParams(0, -1, 1.12f))
+            controlPanel.addView(transportDeckRow, LinearLayout.LayoutParams(-1, -1))
+            player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(158)).apply { topMargin = dp(4) })
         } else {
             // Portrait retains one visualizer and a vertical, scroll-free transport.
             (elapsed.parent as? ViewGroup)?.removeView(elapsed)
@@ -1233,8 +1272,8 @@ class MainActivity : ComponentActivity() {
         // Compact metrics in landscape so the whole panel fits; roomy in portrait to fill the screen.
         // Car mode = even bigger touch targets. Narrow landscape screens get slightly smaller buttons so the panel still fits.
         val narrow = landscape && resources.configuration.screenWidthDp < 720
-        smallSize = if (landscape) (if (narrow) 42 else if (carMode) 62 else 52) else (if (carMode) 60 else 52)
-        bigSize = if (landscape) (if (narrow) 60 else if (carMode) 88 else 76) else (if (carMode) 90 else 78)
+        smallSize = if (landscape) (if (narrow) 42 else if (carMode) 64 else 56) else (if (carMode) 60 else 52)
+        bigSize = if (landscape) (if (narrow) 64 else if (carMode) 94 else 88) else (if (carMode) 90 else 78)
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
         glass.minimumHeight = dp(if (landscape) 26 else minSpectrum + 12)
         secondGlass.visibility = if (landscape) View.VISIBLE else View.GONE
