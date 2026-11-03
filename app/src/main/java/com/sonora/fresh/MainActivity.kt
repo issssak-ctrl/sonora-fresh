@@ -537,6 +537,9 @@ class MainActivity : ComponentActivity() {
             face.shader = RadialGradient(cx-r*.2f,cy-r*.25f,r*1.8f,intArrayOf(0xff8794a1.toInt(),0xff303c4a.toInt(),0xff0b121d.toInt()),null,Shader.TileMode.CLAMP)
             canvas.drawCircle(cx,cy,r*.76f,face)
             face.shader = null
+            ring.strokeWidth = r*.07f
+            ring.color = 0xffcbd9e6.toInt()
+            canvas.drawArc(cx-r*.81f,cy-r*.81f,cx+r*.81f,cy+r*.81f,210f,122f,false,ring)
             ring.strokeWidth = r*.105f; ring.color = 0xff223b4d.toInt()
             canvas.drawArc(cx-r,cy-r,cx+r,cy+r,135f,270f,false,ring)
             ring.color = accent
@@ -757,6 +760,7 @@ class MainActivity : ComponentActivity() {
         }
         controlsRow = controls
         controls.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            if (isLandscape()) return@addOnLayoutChangeListener
             val row = v as LinearLayout
             val available = row.width - row.paddingLeft - row.paddingRight
             if (available <= 0) return@addOnLayoutChangeListener
@@ -1122,7 +1126,7 @@ class MainActivity : ComponentActivity() {
                 val availableHeight = if (landscapeVideo) {
                     // Parent is the weighted upper row; reserve the metadata row below the video.
                     val topRow = (gifArea.parent as? View)?.height ?: 0
-                    if (topRow > 0) topRow - dp(42) else (resources.displayMetrics.heightPixels * 0.52f).toInt()
+                    if (topRow > 0) (topRow - dp(44)).coerceAtLeast(dp(60)) else (resources.displayMetrics.heightPixels * 0.52f).toInt()
                 } else (resources.displayMetrics.heightPixels * 0.45f).toInt()
                 val height = desiredHeight.coerceAtMost(availableHeight.coerceAtLeast(dp(60)))
                 val videoWidth = (height.toFloat() * w / h).toInt()
@@ -1138,8 +1142,8 @@ class MainActivity : ComponentActivity() {
             mediaBox.layoutParams = (mediaBox.layoutParams as LinearLayout.LayoutParams).apply { height = dp(4) }
         }
         gifChoose.visibility = if (animationMode == 0) View.VISIBLE else View.GONE
-        gifArea.background = if (animationMode == -1) null else panel(8f)
-        gifArea.setPadding(dp(if (animationMode == -1) 0 else 3), dp(if (animationMode == -1) 0 else 3), dp(if (animationMode == -1) 0 else 3), dp(if (animationMode == -1) 0 else 3))
+        gifArea.background = null
+        gifArea.setPadding(0, 0, 0, 0)
     }
     private fun updateModes() {
         controller?.let {
@@ -1165,6 +1169,7 @@ class MainActivity : ComponentActivity() {
     private fun configurePlayerLayout() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         player.removeAllViews()
+        header.text = if (landscape) "SONORA v2.0                         S O N O R A" else "SONORA v2.0"
         // Reparent every transport view before rebuilding: Android views may have only one parent.
         listOf(seek, transportTimes, controlsRow, volumeRow).forEach { (it.parent as? ViewGroup)?.removeView(it) }
         transportDeckRow.removeAllViews()
@@ -1191,9 +1196,9 @@ class MainActivity : ComponentActivity() {
             centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(42)))
             player.addView(columns, LinearLayout.LayoutParams(-1, 0, 1f))
 
-            // Stage 10: reference composition: compact left bank, centered transport,
-            // dedicated right rotary knob. Seek is ONLY beneath the center bank.
-            fun shortcut(label: String, mode: Int): TextView = button(label, 11f) {
+            // Stage 12: reference-proportioned, compact three-zone control deck.
+            // The two separators are independent of screen width; controls never use equal weights.
+            fun shortcut(label: String, mode: Int): TextView = button(label, 10f) {
                 setFilterMode(mode)
                 showLibrary(true)
             }
@@ -1204,54 +1209,55 @@ class MainActivity : ComponentActivity() {
             )
             shortcuts.forEachIndexed { index, b ->
                 b.gravity = Gravity.CENTER
-                b.textSize = 11f
-                b.background = if (index == 0) activePanel(12f) else darkPanel(12f)
-                landscapeShortcuts.addView(b, LinearLayout.LayoutParams(0, dp(62), 1f))
+                b.background = if (index == 0) activePanel(10f) else darkPanel(10f)
+                landscapeShortcuts.addView(b, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                    if (index > 0) marginStart = dp(2)
+                })
             }
-            landscapeShortcuts.background = darkPanel(14f)
-            landscapeShortcuts.setPadding(dp(5), dp(5), dp(5), dp(5))
+            landscapeShortcuts.background = darkPanel(12f)
+            landscapeShortcuts.setPadding(dp(3), dp(3), dp(3), dp(3))
 
             val leftDeck = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setPadding(dp(8), 0, dp(12), 0)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(6), 0, dp(10), 0)
             }
             leftDeck.addView(landscapeShortcuts, LinearLayout.LayoutParams(-1, dp(72)))
 
             val centerDeck = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setPadding(dp(4), 0, dp(4), 0)
+                setPadding(dp(5), 0, dp(5), 0)
             }
             controlsRow.gravity = Gravity.CENTER
-            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(83)))
+            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(75)))
             val seekArea = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
             (elapsed.parent as? ViewGroup)?.removeView(elapsed)
             (total.parent as? ViewGroup)?.removeView(total)
-            seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(47), dp(28)))
-            seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(28), 1f))
-            seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(47), dp(28)))
+            seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
+            seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(26), 1f))
+            seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
             centerDeck.addView(seekArea, LinearLayout.LayoutParams(-1, dp(27)))
 
             val rightDeck = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setPadding(dp(10), 0, dp(8), 0)
+                setPadding(dp(6), 0, dp(6), 0)
             }
-            // The rotary interaction remains unchanged; only its dimensions change.
             volumeRow.removeView(volume)
             volumeRow.addView(volume, LinearLayout.LayoutParams(dp(104), dp(104)))
-            rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(110)))
+            rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(108)))
 
+            // Width fractions approximate the approved mockup: 25% / 51% / 24%.
             transportDeckRow.gravity = Gravity.CENTER_VERTICAL
-            transportDeckRow.addView(leftDeck, LinearLayout.LayoutParams(0, -1, 1.12f))
-            transportDeckRow.addView(centerDeck, LinearLayout.LayoutParams(0, -1, 2.35f))
-            transportDeckRow.addView(rightDeck, LinearLayout.LayoutParams(0, -1, 1.12f))
+            transportDeckRow.addView(leftDeck, LinearLayout.LayoutParams(0, -1, 1.25f))
+            transportDeckRow.addView(centerDeck, LinearLayout.LayoutParams(0, -1, 2.55f))
+            transportDeckRow.addView(rightDeck, LinearLayout.LayoutParams(0, -1, 1.20f))
             controlPanel.addView(transportDeckRow, LinearLayout.LayoutParams(-1, -1))
-            player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(132)).apply { topMargin = dp(3) })
+            player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(116)).apply { topMargin = dp(3) })
         } else {
             // Portrait retains one visualizer and a vertical, scroll-free transport.
             (elapsed.parent as? ViewGroup)?.removeView(elapsed)
@@ -1277,8 +1283,8 @@ class MainActivity : ComponentActivity() {
         // Compact metrics in landscape so the whole panel fits; roomy in portrait to fill the screen.
         // Car mode = even bigger touch targets. Narrow landscape screens get slightly smaller buttons so the panel still fits.
         val narrow = landscape && resources.configuration.screenWidthDp < 720
-        smallSize = if (landscape) (if (narrow) 38 else if (carMode) 55 else 48) else (if (carMode) 60 else 52)
-        bigSize = if (landscape) (if (narrow) 60 else if (carMode) 82 else 76) else (if (carMode) 90 else 78)
+        smallSize = if (landscape) (if (narrow) 37 else if (carMode) 44 else 42) else (if (carMode) 60 else 52)
+        bigSize = if (landscape) (if (narrow) 72 else if (carMode) 88 else 82) else (if (carMode) 90 else 78)
         val minSpectrum = if (resources.configuration.screenHeightDp < 700) 56 else 92
         glass.minimumHeight = dp(if (landscape) 26 else minSpectrum + 12)
         secondGlass.visibility = if (landscape) View.VISIBLE else View.GONE
@@ -1298,19 +1304,19 @@ class MainActivity : ComponentActivity() {
         (spectrum.layoutParams as FrameLayout.LayoutParams).setMargins(gm, gm, gm, gm)
         for (sp in spacers) { sp.minimumHeight = dp(if (landscape) 4 else 8); sp.visibility = View.VISIBLE }
         (controlPanel.layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(if (landscape) 4 else 8)
-        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 76 else bigSize + 14)
+        (controlsRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 75 else bigSize + 14)
         (seek.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 28 else 38)
         for (i in 0 until controlsRow.childCount) {
             val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
             val size = dp(if (landscape) when (i) {
-                2 -> bigSize
-                1, 3 -> smallSize + 10
-                else -> smallSize - 6
+                2 -> 74
+                1, 3 -> 61
+                else -> 39
             } else if (i == 2) bigSize else smallSize)
             lp.width = size; lp.height = size
         }
         displayPanel.setPadding(dp(12), dp(if (landscape) 6 else 10), dp(12), dp(if (landscape) 4 else 8))
-        controlPanel.setPadding(dp(12), dp(if (landscape) 4 else 8), dp(12), dp(if (landscape) 6 else 10))
+        controlPanel.setPadding(dp(if (landscape) 6 else 12), dp(if (landscape) 2 else 8), dp(if (landscape) 6 else 12), dp(if (landscape) 3 else 10))
         trackName.maxLines = if (landscape) 1 else 2
         trackArtist.textSize = if (landscape) (if (carMode) 20f else 18f) else (if (carMode) 24f else 21f)
         trackName.textSize = if (landscape) 14f else 15f
