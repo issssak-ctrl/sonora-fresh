@@ -544,6 +544,22 @@ class MainActivity : ComponentActivity() {
             canvas.drawArc(cx-r,cy-r,cx+r,cy+r,135f,270f,false,ring)
             ring.color = accent
             canvas.drawArc(cx-r,cy-r,cx+r,cy+r,135f,270f*level/maxLevel,false,ring)
+            // Fine chrome tick marks and a radial highlight; rotary touch behavior unchanged.
+            val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeWidth = dp(1f); strokeCap = Paint.Cap.ROUND }
+            for (i in 0..30) {
+                val a = Math.toRadians((135.0 + i * 9.0))
+                val x1 = cx + kotlin.math.cos(a).toFloat() * r * 1.05f
+                val y1 = cy + kotlin.math.sin(a).toFloat() * r * 1.05f
+                val x2 = cx + kotlin.math.cos(a).toFloat() * r * (if (i % 5 == 0) 1.22f else 1.15f)
+                val y2 = cy + kotlin.math.sin(a).toFloat() * r * (if (i % 5 == 0) 1.22f else 1.15f)
+                tick.color = if (i <= 30 * level / maxLevel) accent else 0xff8598aa.toInt()
+                canvas.drawLine(x1, y1, x2, y2, tick)
+            }
+            val gloss = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE; strokeWidth = dp(1.2f)
+                color = 0xffd7e7f2.toInt()
+            }
+            canvas.drawArc(cx-r*.72f,cy-r*.72f,cx+r*.72f,cy+r*.72f,205f,115f,false,gloss)
             face.color = Color.WHITE; face.textAlign = Paint.Align.CENTER
             face.typeface = Typeface.DEFAULT_BOLD; face.textSize = r*.42f
             canvas.drawText("${(level*100f/maxLevel).toInt()}%",cx,cy+r*.12f,face)
@@ -670,10 +686,17 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
             setShadowLayer(dp(5f), 0f, 0f, accent)
         }, LinearLayout.LayoutParams(-1, dp(28)))
-        centerBrand.addView(text("ADVANCED MUSIC PLAYER", 8f, muted).apply {
+        centerBrand.addView(text("ADVANCED MUSIC PLAYER", 8f, 0xffb8d7ea.toInt()).apply {
             gravity = Gravity.CENTER; letterSpacing = .16f
         }, LinearLayout.LayoutParams(-1, dp(14)))
         headerBar.addView(centerBrand, LinearLayout.LayoutParams(0, -1, 1f))
+        headerBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            // Center brand over the entire header, independent of the search/menu buttons.
+            val brandCenter = centerBrand.left + centerBrand.width / 2f
+            val screenCenter = headerBar.width / 2f
+            val shift = screenCenter - brandCenter
+            if (kotlin.math.abs(centerBrand.translationX - shift) > 0.5f) centerBrand.translationX = shift
+        }
         headerBar.addView(IconView(iconSearch).apply { setOnClickListener { openSearch() } }, LinearLayout.LayoutParams(dp(44), -1))
         // EQ is available from settings; the approved portrait player has no EQ shortcut.
         // Landscape EQ panel will be integrated in the next UI stage.
@@ -757,7 +780,7 @@ class MainActivity : ComponentActivity() {
         glass = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         glass.addView(spectrum, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) })
         visualizerSelector1 = button("Wave ▾", 12f) { cycleVisualizer(spectrum as SpectrumView, visualizerSelector1) }
-        displayPanel.addView(visualizerSelector1, LinearLayout.LayoutParams(-1, dp(28)))
+        displayPanel.addView(visualizerSelector1, LinearLayout.LayoutParams(-1, dp(24)))
         displayPanel.addView(glass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
         secondSpectrum = SpectrumView()
         secondGlass = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
@@ -765,7 +788,7 @@ class MainActivity : ComponentActivity() {
         visualizerSelector2 = button("Bars ▾", 12f) { cycleVisualizer(secondSpectrum as SpectrumView, visualizerSelector2) }
         (spectrum as SpectrumView).mode = 1
         (secondSpectrum as SpectrumView).mode = 0
-        displayPanel.addView(visualizerSelector2, LinearLayout.LayoutParams(-1, dp(28)))
+        displayPanel.addView(visualizerSelector2, LinearLayout.LayoutParams(-1, dp(24)))
         displayPanel.addView(secondGlass, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
         val controls = LinearLayout(this).apply { gravity = Gravity.CENTER; orientation = LinearLayout.HORIZONTAL }
         shuffleButton = button("⇄", 20f) {
@@ -1217,7 +1240,7 @@ class MainActivity : ComponentActivity() {
             val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             // Symmetric side columns place the video at the exact horizontal center.
             // Do not modify the video view's dimensions or its pixel grid.
-            centerColumn.translationX = 0f
+            centerColumn.translationX = dp(7).toFloat()
             columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
             columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f))
             columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
@@ -1226,7 +1249,7 @@ class MainActivity : ComponentActivity() {
             columns.addOnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
                 val available = bottom - columns.top
                 if (available > 0) {
-                    val target = (available * 0.76f).toInt()
+                    val target = (available * 0.72f).toInt()
                     listOf(landscapeEqPanel, displayPanel).forEach { view ->
                         val lp = view.layoutParams as LinearLayout.LayoutParams
                         if (lp.height != target) { lp.height = target; view.layoutParams = lp }
@@ -1240,6 +1263,7 @@ class MainActivity : ComponentActivity() {
             }
             trackName.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
             trackArtist.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
+            // Metadata shown here comes from the actual Media3 track, not placeholder format/bitrate.
             centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(42)))
             player.addView(columns, LinearLayout.LayoutParams(-1, 0, 1f))
 
@@ -1296,9 +1320,9 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(6), 0, dp(6), 0)
             }
             volumeRow.removeView(volume)
-            volumeRow.addView(text("◖", 18f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
+            volumeRow.addView(text("◀", 15f, 0xffd8eaf6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
             volumeRow.addView(volume, LinearLayout.LayoutParams(dp(96), dp(96)))
-            volumeRow.addView(text("◗", 18f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
+            volumeRow.addView(text("▶", 15f, 0xffd8eaf6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
             rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(104)))
 
             // Width fractions approximate the approved mockup: 25% / 51% / 24%.
