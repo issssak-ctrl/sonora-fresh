@@ -522,6 +522,27 @@ class MainActivity : ComponentActivity() {
         override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
     private fun chrome(round: Boolean = false): Drawable = if (round) circle() else panel()
+    // One translucent, non-interactive glass sheet across EQ / video / visualizers.
+    // Drawn by the parent after the content, so no overlay child consumes touches.
+    private inner class UnifiedGlassCanvas : FrameLayout(this@MainActivity) {
+        private val smoke = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x17030A12 }
+        private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0x6000BDEB; style = Paint.Style.STROKE; strokeWidth = dp(0.8f)
+        }
+        override fun dispatchDraw(canvas: Canvas) {
+            super.dispatchDraw(canvas)
+            val w = width.toFloat(); val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            canvas.drawRect(0f, 0f, w, h, smoke)
+            sheen.shader = LinearGradient(0f, 0f, w * 0.48f, h * 0.68f,
+                0x18FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
+            canvas.drawRect(0f, 0f, w, h, sheen)
+            canvas.drawLine(dp(1f), dp(1f), w - dp(1f), dp(1f), border)
+            canvas.drawLine(dp(1f), h - dp(1f), w - dp(1f), h - dp(1f), border)
+        }
+    }
+
     private inner class RotaryVolumeView : View(this@MainActivity) {
         private val maxLevel = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         var level: Int = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -1228,6 +1249,10 @@ class MainActivity : ComponentActivity() {
                 gravity = Gravity.TOP
                 setBackgroundColor(Color.BLACK)
             }
+            val unifiedGlass = UnifiedGlassCanvas().apply {
+                setBackgroundColor(Color.BLACK)
+                clipChildren = false
+            }
             // All three areas share one uninterrupted black canvas.
             landscapeEqPanel.setBackgroundColor(Color.BLACK)
             landscapeEqPanel.setPadding(dp(4), dp(2), dp(4), dp(2))
@@ -1244,15 +1269,18 @@ class MainActivity : ComponentActivity() {
             columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
             columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f))
             columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
-            // EQ and visualizers are top-aligned, shorter than the video column.
-            // Use the real available height rather than the screen height.
-            columns.addOnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
-                val available = bottom - columns.top
-                if (available > 0) {
-                    val target = (available * 0.72f).toInt()
-                    listOf(landscapeEqPanel, displayPanel).forEach { view ->
-                        val lp = view.layoutParams as LinearLayout.LayoutParams
-                        if (lp.height != target) { lp.height = target; view.layoutParams = lp }
+            // Match both side sections to the video bottom, not to the metadata row.
+            // A layout listener handles different phone/car screen heights without
+            // changing the video view, its aspect ratio, or the pixel grid.
+            columns.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                val videoHeight = gifArea.height
+                if (videoHeight > 0) {
+                    listOf(landscapeEqPanel, displayPanel).forEach { side ->
+                        val lp = side.layoutParams as LinearLayout.LayoutParams
+                        if (lp.height != videoHeight) {
+                            lp.height = videoHeight
+                            side.layoutParams = lp
+                        }
                     }
                 }
             }
@@ -1265,7 +1293,8 @@ class MainActivity : ComponentActivity() {
             trackArtist.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
             // Metadata shown here comes from the actual Media3 track, not placeholder format/bitrate.
             centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(42)))
-            player.addView(columns, LinearLayout.LayoutParams(-1, 0, 1f))
+            unifiedGlass.addView(columns, FrameLayout.LayoutParams(-1, -1))
+            player.addView(unifiedGlass, LinearLayout.LayoutParams(-1, 0, 1f))
 
             // Stage 12: reference-proportioned, compact three-zone control deck.
             // The two separators are independent of screen width; controls never use equal weights.
@@ -1320,9 +1349,9 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(6), 0, dp(6), 0)
             }
             volumeRow.removeView(volume)
-            volumeRow.addView(text("◀", 15f, 0xffd8eaf6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
+            volumeRow.addView(text("◖", 19f, 0xffd8eaf6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
             volumeRow.addView(volume, LinearLayout.LayoutParams(dp(96), dp(96)))
-            volumeRow.addView(text("▶", 15f, 0xffd8eaf6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
+            volumeRow.addView(text("◗", 19f, 0xffd8eaf6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
             rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(104)))
 
             // Width fractions approximate the approved mockup: 25% / 51% / 24%.
