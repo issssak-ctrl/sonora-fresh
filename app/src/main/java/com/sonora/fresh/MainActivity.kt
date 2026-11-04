@@ -663,6 +663,17 @@ class MainActivity : ComponentActivity() {
         }
         headerBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; background = panel(10f); setPadding(0, 0, dp(6), 0) }
         headerBar.addView(header, LinearLayout.LayoutParams(0, -1, 1f))
+        val centerBrand = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+        }
+        centerBrand.addView(text("S O N O R A", 18f, Color.WHITE).apply {
+            gravity = Gravity.CENTER; typeface = Typeface.DEFAULT_BOLD
+            setShadowLayer(dp(5f), 0f, 0f, accent)
+        }, LinearLayout.LayoutParams(-1, dp(28)))
+        centerBrand.addView(text("ADVANCED MUSIC PLAYER", 8f, muted).apply {
+            gravity = Gravity.CENTER; letterSpacing = .16f
+        }, LinearLayout.LayoutParams(-1, dp(14)))
+        headerBar.addView(centerBrand, LinearLayout.LayoutParams(0, -1, 1.05f))
         headerBar.addView(IconView(iconSearch).apply { setOnClickListener { openSearch() } }, LinearLayout.LayoutParams(dp(44), -1))
         // EQ is available from settings; the approved portrait player has no EQ shortcut.
         // Landscape EQ panel will be integrated in the next UI stage.
@@ -721,7 +732,7 @@ class MainActivity : ComponentActivity() {
         }
         val eqHeading = text("EQ 10 BAND", 12f, accent).apply { gravity = Gravity.CENTER }
         landscapeEqPanel.addView(eqHeading, LinearLayout.LayoutParams(-1, dp(24)))
-        landscapeEqPanel.addView(button("ROCK", 12f) { applyPreset(3); landscapeEqView.gains.indices.forEach { i -> landscapeEqView.gains[i] = SoftEq.params.gains[i] }; landscapeEqView.invalidate() }, LinearLayout.LayoutParams(-1, dp(32)))
+        landscapeEqPanel.addView(button("ROCK ▾", 12f) { applyPreset(3); landscapeEqView.gains.indices.forEach { i -> landscapeEqView.gains[i] = SoftEq.params.gains[i] }; landscapeEqView.invalidate() }.apply { background = null; setTextColor(accent) }, LinearLayout.LayoutParams(-1, dp(28)))
         landscapeEqView = EqView().apply {
             gains.indices.forEach { i -> gains[i] = SoftEq.params.gains[i] }
             onChange = { setEq(gains = gains); if (::eqView.isInitialized) updateEqUi() }
@@ -1197,7 +1208,9 @@ class MainActivity : ComponentActivity() {
             }
             // All three areas share one uninterrupted black canvas.
             landscapeEqPanel.setBackgroundColor(Color.BLACK)
+            landscapeEqPanel.setPadding(dp(4), dp(2), dp(4), dp(2))
             displayPanel.setBackgroundColor(Color.BLACK)
+            displayPanel.setPadding(dp(4), dp(2), dp(4), dp(2))
             visualizerSelector1.background = null
             visualizerSelector2.background = null
             visualizerSelector1.gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
@@ -1213,7 +1226,7 @@ class MainActivity : ComponentActivity() {
             columns.addOnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
                 val available = bottom - columns.top
                 if (available > 0) {
-                    val target = (available * 0.79f).toInt()
+                    val target = (available * 0.78f).toInt()
                     listOf(landscapeEqPanel, displayPanel).forEach { view ->
                         val lp = view.layoutParams as LinearLayout.LayoutParams
                         if (lp.height != target) { lp.height = target; view.layoutParams = lp }
@@ -1221,7 +1234,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
             centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
-            trackTitleRow.setPadding(dp(12), 0, dp(12), 0)
+            trackTitleRow.setPadding(dp(8), 0, dp(8), 0)
+            if (trackTitleRow.childCount == 2) {
+                trackTitleRow.addView(View(this), 0, LinearLayout.LayoutParams(dp(40), dp(40)))
+            }
             trackName.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
             trackArtist.gravity = Gravity.CENTER_HORIZONTAL or Gravity.CENTER_VERTICAL
             centerColumn.addView(trackTitleRow, LinearLayout.LayoutParams(-1, dp(42)))
@@ -1265,20 +1281,20 @@ class MainActivity : ComponentActivity() {
             controlsRow.post {
                 val width = controlsRow.width
                 if (width > 0) {
-                    val base = intArrayOf(36, 58, 82, 58, 36).map { dp(it) }
-                    val margins = dp(4) * 10
+                    val base = intArrayOf(34, 66, 94, 66, 34).map { dp(it) }
+                    val margins = dp(3) * 10
                     val factor = minOf(1f, (width - margins).toFloat() / base.sum().coerceAtLeast(1))
                     for (i in 0 until minOf(5, controlsRow.childCount)) {
                         val child = controlsRow.getChildAt(i)
                         val size = (base[i] * factor).toInt().coerceAtLeast(dp(25))
                         val lp = child.layoutParams as LinearLayout.LayoutParams
                         lp.width = size; lp.height = size
-                        lp.marginStart = dp(4); lp.marginEnd = dp(4)
+                        lp.marginStart = dp(3); lp.marginEnd = dp(3)
                         child.layoutParams = lp
                     }
                 }
             }
-            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(84)))
+            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(91)))
             val seekArea = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -1288,7 +1304,7 @@ class MainActivity : ComponentActivity() {
             seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
             seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(26), 1f))
             seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
-            centerDeck.addView(seekArea, LinearLayout.LayoutParams(-1, dp(27)))
+            centerDeck.addView(seekArea, LinearLayout.LayoutParams(-1, dp(22)))
 
             val rightDeck = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1296,14 +1312,16 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(6), 0, dp(6), 0)
             }
             volumeRow.removeView(volume)
+            volumeRow.addView(text("◀", 15f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
             volumeRow.addView(volume, LinearLayout.LayoutParams(dp(108), dp(108)))
+            volumeRow.addView(text("▶", 15f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
             rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(110)))
 
             // Width fractions approximate the approved mockup: 25% / 51% / 24%.
             transportDeckRow.gravity = Gravity.CENTER_VERTICAL
-            transportDeckRow.addView(leftDeck, LinearLayout.LayoutParams(0, -1, 1.25f))
-            transportDeckRow.addView(centerDeck, LinearLayout.LayoutParams(0, -1, 2.55f))
-            transportDeckRow.addView(rightDeck, LinearLayout.LayoutParams(0, -1, 1.20f))
+            transportDeckRow.addView(leftDeck, LinearLayout.LayoutParams(0, -1, 1.20f))
+            transportDeckRow.addView(centerDeck, LinearLayout.LayoutParams(0, -1, 2.75f))
+            transportDeckRow.addView(rightDeck, LinearLayout.LayoutParams(0, -1, 1.15f))
             controlPanel.addView(transportDeckRow, LinearLayout.LayoutParams(-1, -1))
             player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(116)).apply { topMargin = dp(3) })
         } else {
