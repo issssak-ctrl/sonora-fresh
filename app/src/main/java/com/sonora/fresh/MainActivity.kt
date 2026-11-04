@@ -730,9 +730,23 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(Color.BLACK)
             setPadding(dp(4), dp(5), dp(4), dp(5))
         }
-        val eqHeading = text("EQ 10 BAND", 12f, accent).apply { gravity = Gravity.CENTER }
-        landscapeEqPanel.addView(eqHeading, LinearLayout.LayoutParams(-1, dp(24)))
-        landscapeEqPanel.addView(button("ROCK ▾", 12f) { applyPreset(3); landscapeEqView.gains.indices.forEach { i -> landscapeEqView.gains[i] = SoftEq.params.gains[i] }; landscapeEqView.invalidate() }.apply { background = null; setTextColor(accent) }, LinearLayout.LayoutParams(-1, dp(28)))
+        // Compact EQ header: title and preset on one line, leaving more height for sliders.
+        val eqHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val eqHeading = text("Equalizer", 13f, Color.WHITE).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(7), 0, 0, 0)
+        }
+        eqHeaderRow.addView(eqHeading, LinearLayout.LayoutParams(0, -1, 1f))
+        eqHeaderRow.addView(button("ROCK ▾", 12f) {
+            applyPreset(3)
+            landscapeEqView.gains.indices.forEach { i -> landscapeEqView.gains[i] = SoftEq.params.gains[i] }
+            landscapeEqView.invalidate()
+        }.apply { background = null; setTextColor(accent) }, LinearLayout.LayoutParams(dp(94), -1))
+        landscapeEqPanel.addView(eqHeaderRow, LinearLayout.LayoutParams(-1, dp(32)))
         landscapeEqView = EqView().apply {
             gains.indices.forEach { i -> gains[i] = SoftEq.params.gains[i] }
             onChange = { setEq(gains = gains); if (::eqView.isInitialized) updateEqUi() }
@@ -1201,11 +1215,12 @@ class MainActivity : ComponentActivity() {
             visualizerSelector1.gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
             visualizerSelector2.gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
             val centerColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            // Keep video dimensions untouched. Move its entire column slightly right.
-            centerColumn.translationX = dp(11f)
-            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.05f))
+            // Symmetric side columns place the video at the exact horizontal center.
+            // Do not modify the video view's dimensions or its pixel grid.
+            centerColumn.translationX = 0f
+            columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
             columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f))
-            columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.20f))
+            columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
             // EQ and visualizers are top-aligned, shorter than the video column.
             // Use the real available height rather than the screen height.
             columns.addOnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
@@ -1427,9 +1442,10 @@ class MainActivity : ComponentActivity() {
                 p.style = Paint.Style.STROKE
                 p.strokeWidth = dp(4).toFloat()
                 p.color = 0xff2a333c.toInt()
-                c.drawLine(cx, top, cx, bottom, p)
+                c.drawLine(cx, top, cx, yg, p)
+                // The rail below each knob is cyan regardless of the EQ gain.
                 p.color = accent
-                c.drawLine(cx, mid, cx, yg, p)
+                c.drawLine(cx, yg, cx, bottom, p)
                 c.save()
                 c.translate(cx - dp(9), yg - dp(9))
                 knob.draw(c)
