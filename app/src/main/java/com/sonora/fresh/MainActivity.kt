@@ -673,7 +673,7 @@ class MainActivity : ComponentActivity() {
         centerBrand.addView(text("ADVANCED MUSIC PLAYER", 8f, muted).apply {
             gravity = Gravity.CENTER; letterSpacing = .16f
         }, LinearLayout.LayoutParams(-1, dp(14)))
-        headerBar.addView(centerBrand, LinearLayout.LayoutParams(0, -1, 1.05f))
+        headerBar.addView(centerBrand, LinearLayout.LayoutParams(0, -1, 1f))
         headerBar.addView(IconView(iconSearch).apply { setOnClickListener { openSearch() } }, LinearLayout.LayoutParams(dp(44), -1))
         // EQ is available from settings; the approved portrait player has no EQ shortcut.
         // Landscape EQ panel will be integrated in the next UI stage.
@@ -770,22 +770,7 @@ class MainActivity : ComponentActivity() {
             controls.addView(view, LinearLayout.LayoutParams(size, size).apply { marginStart = dp(3); marginEnd = dp(3) })
         }
         controlsRow = controls
-        controls.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            if (isLandscape()) return@addOnLayoutChangeListener
-            val row = v as LinearLayout
-            val available = row.width - row.paddingLeft - row.paddingRight
-            if (available <= 0) return@addOnLayoutChangeListener
-            val small = minOf(dp(smallSize), ((available - dp(bigSize) - dp(30)) / 4).coerceAtLeast(dp(26)))
-            val large = minOf(dp(bigSize), (available - dp(30) - 4 * small).coerceAtLeast(dp(34)))
-            for (i in 0 until row.childCount) {
-                val size = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                    when (i) { 2 -> large; 1, 3 -> minOf(small + dp(10), large); else -> (small - dp(6)).coerceAtLeast(dp(26)) }
-                } else if (i == 2) large else small
-                val child = row.getChildAt(i)
-                val lp = child.layoutParams as LinearLayout.LayoutParams
-                if (lp.width != size || lp.height != size) { lp.width = size; lp.height = size; child.layoutParams = lp }
-            }
-        }
+        // Sizes are configured once per orientation in configurePlayerLayout().
         seek = SeekBar(this).apply { max = 1000; progressDrawable = sliderTrack(); thumb = ChromeDrawable(false, 3f, true, 24) }
         controlPanel.addView(seek, LinearLayout.LayoutParams(-1, dp(36)))
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -1226,7 +1211,7 @@ class MainActivity : ComponentActivity() {
             columns.addOnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
                 val available = bottom - columns.top
                 if (available > 0) {
-                    val target = (available * 0.78f).toInt()
+                    val target = (available * 0.76f).toInt()
                     listOf(landscapeEqPanel, displayPanel).forEach { view ->
                         val lp = view.layoutParams as LinearLayout.LayoutParams
                         if (lp.height != target) { lp.height = target; view.layoutParams = lp }
@@ -1278,23 +1263,7 @@ class MainActivity : ComponentActivity() {
             }
             controlsRow.gravity = Gravity.CENTER
             // Five reference-sized controls: small / medium / largest / medium / small.
-            controlsRow.post {
-                val width = controlsRow.width
-                if (width > 0) {
-                    val base = intArrayOf(34, 66, 94, 66, 34).map { dp(it) }
-                    val margins = dp(3) * 10
-                    val factor = minOf(1f, (width - margins).toFloat() / base.sum().coerceAtLeast(1))
-                    for (i in 0 until minOf(5, controlsRow.childCount)) {
-                        val child = controlsRow.getChildAt(i)
-                        val size = (base[i] * factor).toInt().coerceAtLeast(dp(25))
-                        val lp = child.layoutParams as LinearLayout.LayoutParams
-                        lp.width = size; lp.height = size
-                        lp.marginStart = dp(3); lp.marginEnd = dp(3)
-                        child.layoutParams = lp
-                    }
-                }
-            }
-            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(91)))
+            centerDeck.addView(controlsRow, LinearLayout.LayoutParams(-1, dp(82)))
             val seekArea = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -1304,7 +1273,7 @@ class MainActivity : ComponentActivity() {
             seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
             seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(26), 1f))
             seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
-            centerDeck.addView(seekArea, LinearLayout.LayoutParams(-1, dp(22)))
+            centerDeck.addView(seekArea, LinearLayout.LayoutParams(-1, dp(24)))
 
             val rightDeck = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1312,10 +1281,10 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(6), 0, dp(6), 0)
             }
             volumeRow.removeView(volume)
-            volumeRow.addView(text("◀", 15f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
-            volumeRow.addView(volume, LinearLayout.LayoutParams(dp(108), dp(108)))
-            volumeRow.addView(text("▶", 15f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
-            rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(110)))
+            volumeRow.addView(text("◖", 18f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
+            volumeRow.addView(volume, LinearLayout.LayoutParams(dp(96), dp(96)))
+            volumeRow.addView(text("◗", 18f, accent).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
+            rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(104)))
 
             // Width fractions approximate the approved mockup: 25% / 51% / 24%.
             transportDeckRow.gravity = Gravity.CENTER_VERTICAL
@@ -1377,21 +1346,21 @@ class MainActivity : ComponentActivity() {
         for (i in 0 until controlsRow.childCount) {
             val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
             val size = dp(if (landscape) when (i) {
-                2 -> 74
-                1, 3 -> 61
-                else -> 39
+                2 -> 78
+                1, 3 -> 64
+                else -> 34
             } else if (i == 2) bigSize else smallSize)
             lp.width = size; lp.height = size
         }
-        displayPanel.setPadding(dp(12), dp(if (landscape) 6 else 10), dp(12), dp(if (landscape) 4 else 8))
+        displayPanel.setPadding(dp(if (landscape) 4 else 12), dp(if (landscape) 2 else 10), dp(if (landscape) 4 else 12), dp(if (landscape) 2 else 8))
         controlPanel.setPadding(dp(if (landscape) 6 else 12), dp(if (landscape) 2 else 8), dp(if (landscape) 6 else 12), dp(if (landscape) 3 else 10))
         trackName.maxLines = if (landscape) 1 else 2
         trackArtist.textSize = if (landscape) (if (carMode) 20f else 18f) else (if (carMode) 24f else 21f)
         trackName.textSize = if (landscape) 14f else 15f
         // no room for the on-screen volume slider in landscape or on short portrait screens (hardware keys still work)
         volumeRow.visibility = View.VISIBLE
-        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 104 else 112)
-        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 104 else 108); height = dp(if (landscape) 104 else 108) }
+        (volumeRow.layoutParams as LinearLayout.LayoutParams).height = dp(if (landscape) 102 else 112)
+        (volume.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (landscape) 96 else 108); height = dp(if (landscape) 96 else 108) }
         controlsRow.requestLayout(); details.requestLayout()
         if (animationMode > 0 && ::video.isInitialized) mediaBox.post { displayAnimation() }
     }
