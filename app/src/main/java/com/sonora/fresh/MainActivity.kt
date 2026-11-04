@@ -386,7 +386,7 @@ class MainActivity : ComponentActivity() {
             val c = px.coerceAtLeast(4)
             if (c == cell) return
             cell = c
-            val line = Math.round(c * 0.22f).coerceAtLeast(1)
+            val line = Math.round(c * 0.28f).coerceAtLeast(1)
             val bmp = Bitmap.createBitmap(c, c, Bitmap.Config.ARGB_8888)
             val cv = Canvas(bmp)
             val p = Paint()
@@ -1346,9 +1346,9 @@ class MainActivity : ComponentActivity() {
         for (i in 0 until controlsRow.childCount) {
             val lp = controlsRow.getChildAt(i).layoutParams as LinearLayout.LayoutParams
             val size = dp(if (landscape) when (i) {
-                2 -> 78
-                1, 3 -> 64
-                else -> 34
+                2 -> 74
+                1, 3 -> 50
+                else -> 29
             } else if (i == 2) bigSize else smallSize)
             lp.width = size; lp.height = size
         }
@@ -1403,7 +1403,7 @@ class MainActivity : ComponentActivity() {
         private var active = -1
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val labels = arrayOf("31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
-        private val knob = ChromeDrawable(false, 2.6f, true, 24).also { it.setBounds(0, 0, dp(24), dp(24)) }
+        private val knob = ChromeDrawable(false, 2.6f, true, 18).also { it.setBounds(0, 0, dp(18), dp(18)) }
         private fun yTop() = dp(28).toFloat()
         private fun yBottom() = height - dp(26).toFloat()
         override fun onDraw(c: Canvas) {
@@ -1431,14 +1431,14 @@ class MainActivity : ComponentActivity() {
                 p.color = accent
                 c.drawLine(cx, mid, cx, yg, p)
                 c.save()
-                c.translate(cx - dp(12), yg - dp(12))
+                c.translate(cx - dp(9), yg - dp(9))
                 knob.draw(c)
                 c.restore()
                 if (i == active) {
                     p.style = Paint.Style.STROKE
                     p.strokeWidth = dp(2).toFloat()
                     p.color = accent
-                    c.drawCircle(cx, yg, dp(14).toFloat(), p)
+                    c.drawCircle(cx, yg, dp(11).toFloat(), p)
                 }
                 p.style = Paint.Style.FILL
                 p.style = Paint.Style.FILL
