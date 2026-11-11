@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var secondGlass: FrameLayout
     private lateinit var landscapeEqPanel: LinearLayout
     private lateinit var landscapeEqView: EqView
+    private lateinit var landscapePresetButton: TextView
     private lateinit var search: EditText
     private lateinit var header: TextView
     private lateinit var nav: LinearLayout
@@ -130,14 +131,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var eqBassLabel: TextView
     private lateinit var eqBassSeek: SeekBar
     private lateinit var eqPresetButtons: List<TextView>
-    private val eqPresetNames = listOf("Плоский", "Бас", "Вокал", "Рок", "Поп", "Высокие")
+    private val eqPresetNames = listOf("Flat", "Bass Boost", "Vocal", "Rock", "Pop", "Treble Boost", "Jazz", "Classical", "Dance", "Electronic", "Hip-Hop", "Acoustic")
     private val eqPresets = listOf(
-        floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
-        floatArrayOf(6f, 5f, 4f, 2f, 1f, 0f, 0f, 0f, 0f, 0f),
-        floatArrayOf(-2f, -1f, 0f, 1f, 3f, 4f, 4f, 3f, 1f, 0f),
-        floatArrayOf(4f, 3f, 2f, 0f, -1f, 0f, 2f, 3f, 4f, 4f),
-        floatArrayOf(-1f, 0f, 2f, 3f, 3f, 2f, 0f, -1f, -1f, -2f),
-        floatArrayOf(0f, 0f, 0f, 0f, 0f, 1f, 2f, 4f, 5f, 6f)
+        floatArrayOf(0f,0f,0f,0f,0f,0f,0f,0f,0f,0f),
+        floatArrayOf(6f,5f,4f,2f,1f,0f,0f,0f,0f,0f),
+        floatArrayOf(-2f,-1f,0f,1f,3f,4f,4f,3f,1f,0f),
+        floatArrayOf(4f,3f,2f,0f,-1f,0f,2f,3f,4f,4f),
+        floatArrayOf(-1f,0f,2f,3f,3f,2f,0f,-1f,-1f,-2f),
+        floatArrayOf(0f,0f,0f,0f,0f,1f,2f,4f,5f,6f),
+        floatArrayOf(2f,2f,1f,1f,-1f,-1f,0f,2f,3f,3f),
+        floatArrayOf(3f,2f,1f,0f,-1f,-1f,0f,1f,2f,3f),
+        floatArrayOf(5f,4f,2f,0f,-2f,-1f,1f,3f,4f,4f),
+        floatArrayOf(4f,3f,1f,-1f,-1f,1f,3f,4f,4f,3f),
+        floatArrayOf(5f,4f,2f,0f,-1f,0f,1f,2f,3f,3f),
+        floatArrayOf(2f,2f,1f,0f,0f,1f,2f,2f,1f,1f)
     )
     private lateinit var headerBar: LinearLayout
     private lateinit var heart: IconView
@@ -166,6 +173,8 @@ class MainActivity : ComponentActivity() {
                 total.text = formatTime(duration)
             }
             if (!volumeDragging && ::volume.isInitialized) volume.level = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (::spectrum.isInitialized) spectrum.invalidate()
+            if (::secondSpectrum.isInitialized) secondSpectrum.invalidate()
             handler.postDelayed(this, 500)
         }
     }
@@ -620,6 +629,7 @@ class MainActivity : ComponentActivity() {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val shown = FloatArray(AudioLevels.BANDS)
         private var barShader: Shader? = null
+        private val peaks = FloatArray(32)
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
             super.onSizeChanged(w, h, oldw, oldh)
             barShader = LinearGradient(0f, 0f, 0f, h.toFloat(), intArrayOf(0xFF9BF5FF.toInt(), 0xFF00C8FF.toInt(), 0xFF0088BC.toInt()), null, Shader.TileMode.CLAMP)
@@ -637,6 +647,25 @@ class MainActivity : ComponentActivity() {
             val levels = AudioLevels.bands
             var alive = false
             val wavePath = android.graphics.Path()
+            if (mode == 2) {
+                // Spectrum: 32 grouped frequency bins, independent from the narrow Bars renderer.
+                val columns = peaks.size
+                val step = width.toFloat() / columns
+                for (bin in 0 until columns) {
+                    val start = (bin * bars / columns).coerceIn(0, bars - 1)
+                    val end = ((bin + 1) * bars / columns).coerceIn(start + 1, bars)
+                    var energy = 0f
+                    for (j in start until end) energy += levels[j]
+                    energy = if (playing) energy / (end - start) else 0f
+                    peaks[bin] = if (energy > peaks[bin]) energy else peaks[bin] * 0.88f
+                    val x = bin * step + step * .15f
+                    val top = height * (1f - peaks[bin].coerceIn(0f, 1f) * .92f)
+                    p.alpha = 245
+                    c.drawRoundRect(x, top, x + step * .7f, height.toFloat(), dp(1f), dp(1f), p)
+                }
+                if (playing || peaks.any { it > .01f }) postInvalidateOnAnimation()
+                return
+            }
             for (i in 0 until bars) {
                 val target = if (playing) levels[i] else 0f
                 shown[i] = if (target >= shown[i]) target else shown[i] * 0.88f
@@ -785,11 +814,10 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(7), 0, 0, 0)
         }
         eqHeaderRow.addView(eqHeading, LinearLayout.LayoutParams(0, -1, 1f))
-        eqHeaderRow.addView(button("ROCK ▾", 12f) {
-            applyPreset(3)
-            landscapeEqView.gains.indices.forEach { i -> landscapeEqView.gains[i] = SoftEq.params.gains[i] }
-            landscapeEqView.invalidate()
-        }.apply { background = null; setTextColor(accent) }, LinearLayout.LayoutParams(dp(94), -1))
+        landscapePresetButton = button("ROCK ▾", 12f) { showLandscapePresets() }.apply {
+            background = null; setTextColor(accent)
+        }
+        eqHeaderRow.addView(landscapePresetButton, LinearLayout.LayoutParams(dp(94), -1))
         landscapeEqPanel.addView(eqHeaderRow, LinearLayout.LayoutParams(-1, dp(32)))
         landscapeEqView = EqView().apply {
             gains.indices.forEach { i -> gains[i] = SoftEq.params.gains[i] }
@@ -976,9 +1004,9 @@ class MainActivity : ComponentActivity() {
         eqHead.addView(eqOnButton, LinearLayout.LayoutParams(dp(110), dp(40)))
         eqItems.addView(eqHead, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
         eqPresetButtons = eqPresetNames.mapIndexed { i, name -> button(name, 13f) { applyPreset(i) } }
-        for (r in 0..1) {
+        for (r in eqPresetNames.indices step 3) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            for (j in 0..2) row.addView(eqPresetButtons[r * 3 + j], LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
+            for (j in 0..2) row.addView(eqPresetButtons[r + j], LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginStart = dp(3); marginEnd = dp(3) })
             eqItems.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
         }
         eqView = EqView()
@@ -1042,7 +1070,7 @@ class MainActivity : ComponentActivity() {
                 controller = controllerFuture?.get()
                 controller?.addListener(object : Player.Listener {
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { refreshTrack() }
-                    override fun onIsPlayingChanged(isPlaying: Boolean) { playButton.text = if (isPlaying) "Ⅱ" else "▶"; spectrum.invalidate(); updateMini() }
+                    override fun onIsPlayingChanged(isPlaying: Boolean) { playButton.text = if (isPlaying) "Ⅱ" else "▶"; spectrum.invalidate(); secondSpectrum.invalidate(); updateMini() }
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { updateModes() }
                     override fun onRepeatModeChanged(repeatMode: Int) { updateModes() }
                 })
@@ -1115,9 +1143,23 @@ class MainActivity : ComponentActivity() {
         SoftEq.save(this)
         updateEqUi()
     }
+    private fun showLandscapePresets() {
+        val popup = PopupMenu(this, landscapePresetButton)
+        eqPresetNames.forEachIndexed { index, name -> popup.menu.add(0, index, index, name) }
+        popup.setOnMenuItemClickListener { item -> applyPreset(item.itemId); true }
+        popup.show()
+    }
     private fun updateEqUi() {
         if (!::eqView.isInitialized) return
         val p = SoftEq.params
+        if (::landscapePresetButton.isInitialized) {
+            val selected = eqPresets.indexOfFirst { it.contentEquals(p.gains) }
+            landscapePresetButton.text = (if (selected >= 0) eqPresetNames[selected] else "Custom") + " ▾"
+        }
+        if (::landscapeEqView.isInitialized) {
+            System.arraycopy(p.gains, 0, landscapeEqView.gains, 0, SoftEq.BANDS)
+            landscapeEqView.invalidate()
+        }
         System.arraycopy(p.gains, 0, eqView.gains, 0, SoftEq.BANDS)
         eqView.invalidate()
         eqView.alpha = if (p.enabled) 1f else 0.45f
