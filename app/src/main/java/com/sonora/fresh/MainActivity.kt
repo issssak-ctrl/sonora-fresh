@@ -1338,9 +1338,9 @@ class MainActivity : ComponentActivity() {
             unifiedGlass.addView(columns, FrameLayout.LayoutParams(-1, -1))
             player.addView(unifiedGlass, LinearLayout.LayoutParams(-1, 0, 1f))
 
-            // Stage 12: reference-proportioned, compact three-zone control deck.
-            // The two separators are independent of screen width; controls never use equal weights.
-            fun shortcut(label: String, mode: Int): TextView = button(label, 10f) {
+            // Stage 22: wider metallic navigation keys with a blue LED active state.
+            // Only the landscape transport deck is affected.
+            fun shortcut(label: String, mode: Int): TextView = button(label, 11f) {
                 setFilterMode(mode)
                 showLibrary(true)
             }
@@ -1351,18 +1351,20 @@ class MainActivity : ComponentActivity() {
             )
             shortcuts.forEachIndexed { index, b ->
                 b.gravity = Gravity.CENTER
-                b.background = if (index == 0) activePanel(10f) else darkPanel(10f)
+                b.setTextColor(if (index == 0) accent else 0xffe2edf5.toInt())
+                b.background = if (index == 0) activePanel(7f) else panel(7f)
+                b.setPadding(dp(2), 0, dp(2), 0)
                 landscapeShortcuts.addView(b, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                    if (index > 0) marginStart = dp(2)
+                    if (index > 0) marginStart = dp(3)
                 })
             }
-            landscapeShortcuts.background = darkPanel(12f)
-            landscapeShortcuts.setPadding(dp(3), dp(3), dp(3), dp(3))
+            landscapeShortcuts.background = darkPanel(9f)
+            landscapeShortcuts.setPadding(dp(3), dp(4), dp(3), dp(4))
 
             val leftDeck = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(6), 0, dp(10), 0)
+                setPadding(dp(4), 0, dp(4), 0)
             }
             leftDeck.addView(landscapeShortcuts, LinearLayout.LayoutParams(-1, dp(72)))
 
@@ -1380,9 +1382,16 @@ class MainActivity : ComponentActivity() {
             }
             (elapsed.parent as? ViewGroup)?.removeView(elapsed)
             (total.parent as? ViewGroup)?.removeView(total)
-            seekArea.addView(elapsed.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
-            seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(26), 1f))
-            seekArea.addView(total.apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(45), dp(26)))
+            // Stage 22: 12% shorter progress track, with timestamps tight to its ends.
+            // A weighted, centered track adapts to different landscape screen widths.
+            seekArea.addView(View(this), LinearLayout.LayoutParams(0, 1, 0.06f))
+            seekArea.addView(elapsed.apply { gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL }, LinearLayout.LayoutParams(dp(38), dp(26)))
+            seekArea.addView(seek, LinearLayout.LayoutParams(0, dp(26), 0.88f).apply {
+                marginStart = dp(2)
+                marginEnd = dp(2)
+            })
+            seekArea.addView(total.apply { gravity = Gravity.LEFT or Gravity.CENTER_VERTICAL }, LinearLayout.LayoutParams(dp(38), dp(26)))
+            seekArea.addView(View(this), LinearLayout.LayoutParams(0, 1, 0.06f))
             centerDeck.addView(seekArea, LinearLayout.LayoutParams(-1, dp(24)))
 
             val rightDeck = LinearLayout(this).apply {
@@ -1396,10 +1405,10 @@ class MainActivity : ComponentActivity() {
             volumeRow.addView(text("◗", 19f, 0xffd8eaf6.toInt()).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(42)))
             rightDeck.addView(volumeRow, LinearLayout.LayoutParams(-1, dp(104)))
 
-            // Width fractions approximate the approved mockup: 25% / 51% / 24%.
+            // Stage 22: navigation grows while volume stays the same width share.
             transportDeckRow.gravity = Gravity.CENTER_VERTICAL
-            transportDeckRow.addView(leftDeck, LinearLayout.LayoutParams(0, -1, 1.20f))
-            transportDeckRow.addView(centerDeck, LinearLayout.LayoutParams(0, -1, 2.75f))
+            transportDeckRow.addView(leftDeck, LinearLayout.LayoutParams(0, -1, 1.40f))
+            transportDeckRow.addView(centerDeck, LinearLayout.LayoutParams(0, -1, 2.55f))
             transportDeckRow.addView(rightDeck, LinearLayout.LayoutParams(0, -1, 1.15f))
             controlPanel.addView(transportDeckRow, LinearLayout.LayoutParams(-1, -1))
             player.addView(controlPanel, LinearLayout.LayoutParams(-1, dp(116)).apply { topMargin = dp(3) })
