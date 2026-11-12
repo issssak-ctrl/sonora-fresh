@@ -1311,22 +1311,29 @@ class MainActivity : ComponentActivity() {
             columns.addView(landscapeEqPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
             columns.addView(centerColumn, LinearLayout.LayoutParams(0, -1, 1.60f))
             columns.addView(displayPanel, LinearLayout.LayoutParams(0, -1, 1.125f))
-            // Match both side sections to the video bottom, not to the metadata row.
-            // A layout listener handles different phone/car screen heights without
-            // changing the video view, its aspect ratio, or the pixel grid.
-            columns.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                val videoHeight = gifArea.height
-                if (videoHeight > 0) {
-                    listOf(landscapeEqPanel, displayPanel).forEach { side ->
-                        val lp = side.layoutParams as LinearLayout.LayoutParams
-                        if (lp.height != videoHeight) {
-                            lp.height = videoHeight
-                            side.layoutParams = lp
-                        }
+            // Stage 23: BYD tablet landscape. Keep the video aspect ratio unchanged.
+            // Move the video down slightly; the EQ and both visualizers end at its bottom.
+            val tabletVideoOffset = dp(18)
+            fun alignTabletSections() {
+                val mediaHeight = mediaBox.height
+                if (mediaHeight <= 0) return
+                listOf(landscapeEqPanel, displayPanel).forEach { side ->
+                    val lp = side.layoutParams as LinearLayout.LayoutParams
+                    if (lp.height != mediaHeight || lp.topMargin != tabletVideoOffset) {
+                        lp.height = mediaHeight
+                        lp.topMargin = tabletVideoOffset
+                        side.layoutParams = lp
                     }
                 }
             }
-            centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, 0, 1f))
+            mediaBox.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> alignTabletSections() }
+            columns.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> alignTabletSections() }
+            centerColumn.addView(gifArea, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = tabletVideoOffset
+            })
+            // Flexible empty space keeps the metadata row at the bottom, not below
+            // a stretched video container. Metadata height remains compact.
+            centerColumn.addView(View(this), LinearLayout.LayoutParams(-1, 0, 1f))
             trackTitleRow.setPadding(dp(8), 0, dp(8), 0)
             if (trackTitleRow.childCount == 2) {
                 trackTitleRow.addView(View(this), 0, LinearLayout.LayoutParams(dp(40), dp(40)))
